@@ -1,0 +1,31 @@
+{
+	"layers_to_monitor": [
+		"model.layers.0.mlp.down_proj",
+		"model.layers.1.mlp.down_proj",
+		"model.layers.2.mlp.down_proj",
+		"model.layers.3.mlp.down_proj",
+		"model.layers.4.mlp.down_proj",
+		"model.layers.5.mlp.down_proj",
+		"model.layers.6.mlp.down_proj",
+		"model.layers.7.mlp.down_proj",
+		"model.layers.8.mlp.down_proj",
+		"model.layers.9.mlp.down_proj",
+		"model.layers.10.mlp.down_proj",
+		"model.layers.11.mlp.down_proj",
+		"model.layers.12.mlp.down_proj",
+		"model.layers.13.mlp.down_proj",
+		"model.layers.14.mlp.down_proj",
+		"model.layers.15.mlp.down_proj"
+	],
+	"topp": [
+		0.9,
+		0.95,
+		0.96,
+		0.97,
+		0.98,
+		0.99,
+		0.999,
+		0.995,
+		1.0
+	]
+}

@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+from pathlib import Path
 import sys
 from functools import partial
 from typing import Union
@@ -9,9 +10,17 @@ from typing import Union
 from lm_eval import evaluator, utils
 from lm_eval.evaluator import request_caching_arg_to_dict
 from lm_eval.loggers import EvaluationTracker, WandbLogger
+from lm_eval.sparsity_monitor import SparsityMonitor
 from lm_eval.tasks import TaskManager
 from lm_eval.utils import handle_non_serializable, make_table, simple_parse_args_string
 
+
+env_file = Path('user.env')
+if env_file.exists():
+    with env_file.open('r') as f:
+        for line in f:
+            k, v = line.strip().split('=')
+            os.environ[k] = v
 
 def _int_or_none_list_arg_type(
     min_len: int, max_len: int, defaults: str, value: str, split_char: str = ","
@@ -257,6 +266,25 @@ def setup_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Sets trust_remote_code to True to execute code to create HF Datasets from the Hub",
     )
+    parser.add_argument(
+        "--sparsity_config",
+        default=None,
+        type=str,
+        help="Path to the config file that specifies the sparsity patterns to measure and enforce",
+    )
+    parser.add_argument(
+        "--sparsification_topp",
+        default=None,
+        type=float,
+        help="Value to use for sparsification topp. Overwrites the values in the config.",
+    )
+    parser.add_argument(
+        "--sparsification_mode",
+        default=None,
+        choices=[None, 'input', 'output'],
+        type=str,
+        help="Sparsification mode.",
+    )
     return parser
 
 
@@ -379,6 +407,13 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         cache_requests=args.cache_requests
     )
 
+    if args.sparsity_config is not None:
+        sparsity_monitor = SparsityMonitor(args.sparsity_config, 
+                                           output_dir=args.output_path,
+                                           topp=args.sparsification_topp,
+                                           sparsification_mode=args.sparsification_mode)
+    else:
+        sparsity_monitor = None
     results = evaluator.simple_evaluate(
         model=args.model,
         model_args=args.model_args,
@@ -404,6 +439,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         numpy_random_seed=args.seed[1],
         torch_random_seed=args.seed[2],
         fewshot_random_seed=args.seed[3],
+        sparsity_monitor=sparsity_monitor,
         **request_caching_args,
     )
 

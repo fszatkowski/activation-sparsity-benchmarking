@@ -1,0 +1,22 @@
+{
+	"layers_to_sparsify": [
+		"model.layers.0.mlp",
+		"model.layers.1.mlp",
+		"model.layers.2.mlp",
+		"model.layers.3.mlp",
+		"model.layers.4.mlp",
+		"model.layers.5.mlp",
+		"model.layers.6.mlp",
+		"model.layers.7.mlp",
+		"model.layers.8.mlp",
+		"model.layers.9.mlp",
+		"model.layers.10.mlp",
+		"model.layers.11.mlp",
+		"model.layers.12.mlp",
+		"model.layers.13.mlp",
+		"model.layers.14.mlp",
+		"model.layers.15.mlp"
+	],
+	"topp": 1.0,
+	"sparsification_mode": "input"
+}

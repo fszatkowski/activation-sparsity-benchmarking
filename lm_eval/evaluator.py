@@ -74,6 +74,7 @@ def simple_evaluate(
     numpy_random_seed: int = 1234,
     torch_random_seed: int = 1234,
     fewshot_random_seed: int = 1234,
+    sparsity_monitor = None
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -313,6 +314,7 @@ def simple_evaluate(
         apply_chat_template=apply_chat_template,
         fewshot_as_multiturn=fewshot_as_multiturn,
         verbosity=verbosity,
+        sparsity_monitor=sparsity_monitor
     )
 
     if lm.rank == 0:
@@ -372,6 +374,7 @@ def evaluate(
     apply_chat_template: Union[bool, str] = False,
     fewshot_as_multiturn: bool = False,
     verbosity: str = "INFO",
+    sparsity_monitor = None
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -503,8 +506,15 @@ def evaluate(
             for _ in range(padding_requests[reqtype]):
                 cloned_reqs.extend([req] * req.repeats)
 
+        if sparsity_monitor is not None:
+            sparsity_monitor.initialize(lm)
+
         # run requests through model
         resps = getattr(lm, reqtype)(cloned_reqs)
+
+        if sparsity_monitor is not None:
+            sparsity_monitor.plot_input_sparsity_data()
+            sparsity_monitor.save_layer_sparsity_data()
 
         # put responses from model into a list of length K for each request.
         for x, req in zip(resps, cloned_reqs):

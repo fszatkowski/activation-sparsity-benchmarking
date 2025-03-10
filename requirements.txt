@@ -1,1 +1,9 @@
 -e .
+black
+isort
+flake8
+beautysh
+# meta ifeval requirements
+immutabledict
+langdetect
+seaborn
