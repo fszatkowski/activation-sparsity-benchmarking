@@ -31,18 +31,25 @@ def count_tokens(dataloader: DataLoader, num_epochs: int) -> int:
 
 
 def wandb_initialize(args_to_log):
+    assert "WANDB_ENTITY" in os.environ, "Please set WANDB_ENTITY environment variable."
+    assert (
+        "WANDB_PROJECT" in os.environ
+    ), "Please set WANDB_PROJECT environment variable."
+    wandb_entity = os.environ["WANDB_ENTITY"]
+    wandb_project = os.environ["WANDB_PROJECT"]
+
     if "LOCAL_RANK" in os.environ:
         if os.environ["LOCAL_RANK"] == "0":
             wandb.init(
-                entity="fszatkowski",
-                project="sparsity_enforcement",
+                entity=wandb_entity,
+                project=wandb_project,
             )
             for args in args_to_log:
                 wandb.config.update(asdict(args))
     else:
         wandb.init(
-            entity="fszatkowski",
-            project="sparsity_enforcement",
+            entity=wandb_entity,
+            project=wandb_project,
         )
         for args in args_to_log:
             wandb.config.update(asdict(args))
