@@ -15,13 +15,6 @@ from lm_eval.tasks import TaskManager
 from lm_eval.utils import handle_non_serializable, make_table, simple_parse_args_string
 
 
-env_file = Path('user.env')
-if env_file.exists():
-    with env_file.open('r') as f:
-        for line in f:
-            k, v = line.strip().split('=')
-            os.environ[k] = v
-
 def _int_or_none_list_arg_type(
     min_len: int, max_len: int, defaults: str, value: str, split_char: str = ","
 ):

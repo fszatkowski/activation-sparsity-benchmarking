@@ -1,9 +1,16 @@
 -e .
+# formatters
 black
 isort
 flake8
 beautysh
-# meta ifeval requirements
-immutabledict
-langdetect
+# plotting
 seaborn
+# training
+peft
+trl
+wandb
+# flash attention
+# flash-attn
+# packaging
+# ninja
