@@ -14,17 +14,27 @@ class FinetuningArguments(SFTConfig):
         default="yahma/alpaca-cleaned",
         metadata={"help": "The name of the dataset to use for fine-tuning."},
     )
+    dataset_split: str = field(
+        default="train",
+        metadata={
+            "help": "The split of the dataset to use for fine-tuning. "
+            "Use train[:10] or train[:20%] to limit the dataset size."
+        },
+    )
     use_lora: bool = field(
         default=True,
         metadata={"help": "Whether to use LORA."},
     )
-    train_size_limit: Optional[int] = field(
-        default=None,
-        metadata={"help": "The size of the training dataset."},
-    )
     test_size: float = field(
         default=0.01,
         metadata={"help": "The size of the test dataset."},
+    )
+    preprocess: str = field(
+        default="chat_template",
+        metadata={
+            "help": "The preprocessing method to use for the dataset. "
+            "Options are: 'chat_template', 'none'."
+        },
     )
 
     output_dir: str = field(
