@@ -1,17 +1,17 @@
-import random
-
-import numpy as np
-import torch
+from peft import (
+    LoraConfig,
+    get_peft_model,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     HfArgumentParser,
 )
 
-from train.args import FinetuningArguments, SparsityEnforcementArguments
-from train.dataprocess.utils import prepare_dataset
+from train.args import FinetuningArguments, LORAArguments, SparsityEnforcementArguments
+from train.dataprocess import prepare_dataset
 from train.trainer import SparsityEnforcementTrainer
-from train.wandb_utils import wandb_initialize
+from train.training_utils import count_tokens, set_seed, wandb_initialize
 
 # Use flash attentnion if the package is installed
 try:
@@ -26,23 +26,19 @@ except ImportError:
     attn_implementation = "eager"
 
 
-def set_seed(seed: int):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    random.seed(seed)
-    np.random.seed(seed)
-
-
 if __name__ == "__main__":
-    parser = HfArgumentParser((FinetuningArguments, SparsityEnforcementArguments))
-    training_args, sparsity_enforcement_args = parser.parse_args_into_dataclasses()
+    parser = HfArgumentParser(
+        (FinetuningArguments, LORAArguments, SparsityEnforcementArguments)
+    )
+    training_args, lora_args, sparsity_enforcement_args = (
+        parser.parse_args_into_dataclasses()
+    )
 
     if "wandb" in training_args.report_to:
         # Handle logging for the distributed runs
-        wandb_initialize(args_to_log=[training_args, sparsity_enforcement_args])
+        wandb_initialize(
+            args_to_log=[training_args, lora_args, sparsity_enforcement_args]
+        )
 
     set_seed(training_args.seed)
 
@@ -62,12 +58,24 @@ if __name__ == "__main__":
 
     dataset = prepare_dataset(training_args, tokenizer)
 
+    if training_args.use_lora:
+        peft_config = LoraConfig(
+            r=lora_args.lora_rank,
+            lora_alpha=lora_args.lora_alpha,
+            lora_dropout=lora_args.lora_dropout,
+            target_modules=lora_args.lora_modules,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(
+            model,
+            peft_config=peft_config,
+        )
+        model.print_trainable_parameters()
+    else:
+        peft_config = None
+
     trainer = SparsityEnforcementTrainer(
-        model=model,
-        train_dataset=dataset["train"],
-        eval_dataset=dataset["test"],
-        args=training_args,
-        tokenizer=tokenizer,
         loss_type=sparsity_enforcement_args.loss_type,
         loss_weight=sparsity_enforcement_args.loss_weight,
         modules_to_sparsify=sparsity_enforcement_args.modules_to_sparsify,
@@ -75,9 +83,24 @@ if __name__ == "__main__":
         modules_to_monitor=sparsity_enforcement_args.modules_to_monitor,
         monitor_modes=sparsity_enforcement_args.monitor_modes,
         monitor_top_p=sparsity_enforcement_args.monitor_top_p,
+        model=model,
+        train_dataset=dataset["train"],
+        eval_dataset=dataset["test"],
+        peft_config=peft_config,
+        args=training_args,
+        tokenizer=tokenizer,
+    )
+
+    count_tokens(
+        dataloader=trainer.get_train_dataloader(),
+        num_epochs=training_args.num_train_epochs,
     )
 
     trainer.train()
+
+    if training_args.use_lora:
+        # Merge PEFT model
+        model = model.merge_and_unload()
 
     model.save_pretrained(training_args.output_dir)
     tokenizer.save_pretrained(training_args.output_dir)

@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from transformers import TrainingArguments
+from trl import SFTConfig
 
 
 @dataclass
-class FinetuningArguments(TrainingArguments):
+class FinetuningArguments(SFTConfig):
     model_name: str = field(
         default="meta-llama/Llama-3.2-1B-Instruct",
         metadata={"help": "The name of the model to use for fine-tuning."},
@@ -21,16 +21,13 @@ class FinetuningArguments(TrainingArguments):
             "Use train[:10] or train[:20%] to limit the dataset size."
         },
     )
+    use_lora: bool = field(
+        default=True,
+        metadata={"help": "Whether to use LORA."},
+    )
     test_size: float = field(
         default=0.01,
         metadata={"help": "The size of the test dataset."},
-    )
-    max_seq_length: int = field(
-        default=512,
-        metadata={
-            "help": "The maximum sequence length of the dataset. "
-            "Sequences longer than this will be truncated."
-        },
     )
     preprocess: str = field(
         default="chat_template",
@@ -39,13 +36,7 @@ class FinetuningArguments(TrainingArguments):
             "Options are: 'chat_template', 'none'."
         },
     )
-    mask_prompt: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to mask loss corresponding to the prompt during training. "
-            "If True, the prompt will be masked and only the response will be used for training."
-        },
-    )
+
     output_dir: str = field(
         default="outputs/models/test",
         metadata={
@@ -87,4 +78,32 @@ class SparsityEnforcementArguments:
     monitor_top_p: List[float] = field(
         default_factory=lambda: [0.99, 0.9, 0.75, 0.5],
         metadata={"help": "The top p values to monitor during evaluation."},
+    )
+
+
+@dataclass
+class LORAArguments:
+    lora_rank: int = field(
+        default=32,
+        metadata={"help": "The rank of the LORA matrix."},
+    )
+    lora_alpha: int = field(
+        default=64,
+        metadata={"help": "The alpha parameter of the LORA matrix."},
+    )
+    lora_dropout: float = field(
+        default=0.005,
+        metadata={"help": "The dropout rate of the LORA matrix."},
+    )
+    lora_modules: List[str] = field(
+        default_factory=lambda: [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "up_proj",
+            "down_proj",
+            "o_proj",
+            "gate_proj",
+        ],
+        metadata={"help": "The modules to apply LORA to."},
     )
