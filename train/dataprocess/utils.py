@@ -14,15 +14,6 @@ def prepare_dataset(training_args: FinetuningArguments, tokenizer: AutoTokenizer
         training_args.dataset_name, split=training_args.dataset_split
     )
     dataset = dataset.shuffle(seed=training_args.seed)
-    dataset = dataset.train_test_split(
-        test_size=training_args.test_size, seed=training_args.seed
-    )
-
-    preprocess = training_args.preprocess
-    if preprocess == "chat_template":
-        raise NotImplementedError(
-            "Preprocessing with chat template is not implemented yet."
-        )
 
     if training_args.dataset_name == "yahma/alpaca-cleaned":
         preprocess_fn = get_alpaca_preprocess_fn(training_args, tokenizer)
@@ -35,12 +26,19 @@ def prepare_dataset(training_args: FinetuningArguments, tokenizer: AutoTokenizer
             "Dataset {} is not implemented".format(training_args.dataset_name)
         )
 
-    for split in dataset:
-        dataset[split] = dataset[split].map(
-            preprocess_fn,
-            num_proc=os.cpu_count() - 1,
-            remove_columns=dataset[split].column_names,
-        )
+    dataset = dataset.map(
+        preprocess_fn,
+        num_proc=4,
+        remove_columns=dataset.column_names,
+    )
+
+    # Filter out the examples with all labels masked out to -100
+    dataset = dataset.filter(
+        lambda example: any(label != -100 for label in example["labels"])
+    )
+    dataset = dataset.train_test_split(
+        test_size=training_args.test_size, seed=training_args.seed
+    )
 
     train_set = dataset["train"]
     total_tokens = sum([sum(mask) for mask in train_set["attention_mask"]])
@@ -49,6 +47,6 @@ def prepare_dataset(training_args: FinetuningArguments, tokenizer: AutoTokenizer
     )
     print(f"Total tokens across training sequences: {total_tokens/1e9}B")
     print(
-        f"Total valid tokens for loos propagation: {valid_tokens/1e9}B ({valid_tokens/total_tokens:.2%})"
+        f"Total valid tokens for loss propagation: {valid_tokens/1e9}B ({valid_tokens/total_tokens:.2%})"
     )
     return dataset

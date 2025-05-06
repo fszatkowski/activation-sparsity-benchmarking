@@ -32,13 +32,6 @@ class FinetuningArguments(TrainingArguments):
             "Sequences longer than this will be truncated."
         },
     )
-    preprocess: str = field(
-        default="chat_template",
-        metadata={
-            "help": "The preprocessing method to use for the dataset. "
-            "Options are: 'chat_template', 'none'."
-        },
-    )
     mask_prompt: bool = field(
         default=False,
         metadata={

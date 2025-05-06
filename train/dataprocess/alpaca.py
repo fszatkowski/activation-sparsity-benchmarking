@@ -62,18 +62,17 @@ def get_alpaca_preprocess_fn(
         if mask_prompt_labels:
             prompt_tokens = tokenizer(
                 prompt,
-                truncation=True,
-                max_length=max_seq_length,
-                padding=False,
                 return_tensors="pt",
-                add_special_tokens=False,
-            )["input_ids"][0]
+            )[
+                "input_ids"
+            ][0]
             prompt_len = len(prompt_tokens)
-            labels = input_ids.clone()
             labels[:prompt_len] = -100
 
-        # Always ignore padding tokens in loss
-        labels[input_ids == tokenizer.pad_token_id] = -100
+        # Set labels to -100 where attention mask is 0, but don't mask the last EOS token
+        # Tokenizer by default does not include EOS in the attention mask
+        seq_len = attention_mask.sum()
+        labels[seq_len + 1 :] = -100
 
         output_dict = {
             "input_ids": input_ids,

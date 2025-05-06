@@ -51,6 +51,7 @@ if __name__ == "__main__":
         low_cpu_mem_usage=True,
         return_dict=True,
         attn_implementation=attn_implementation,
+        device_map="auto",
     )
     tokenizer = AutoTokenizer.from_pretrained(
         training_args.model_name, trust_remote_code=True
@@ -78,6 +79,15 @@ if __name__ == "__main__":
     )
 
     trainer.train()
+
+    # Generate an answer to a sample input
+    sample_txt = "How are you?"
+    inputs = tokenizer.encode(sample_txt, return_tensors="pt").to(model.device)
+    outputs = model.generate(
+        inputs,
+        max_length=50,
+    )
+    output_txt = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     model.save_pretrained(training_args.output_dir)
     tokenizer.save_pretrained(training_args.output_dir)
