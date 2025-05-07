@@ -49,6 +49,13 @@ class FinetuningArguments(TrainingArguments):
         default_factory=lambda: [],
         metadata={"help": "Tags to use for wandb logging."},
     )
+    attn_implementation: str = field(
+        default="eager",
+        metadata={
+            "help": "The attention implementation to use. "
+            "Use 'flash_attention_2' for flash attention and 'eager' for eager implementation."
+        },
+    )
 
 
 @dataclass

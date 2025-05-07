@@ -13,18 +13,6 @@ from train.dataprocess.utils import prepare_dataset
 from train.trainer import SparsityEnforcementTrainer
 from train.wandb_utils import wandb_initialize
 
-# Use flash attentnion if the package is installed
-try:
-    import flash_attn_interface
-
-    attn_implementation = "flash_attention_2"
-except ImportError:
-    print(
-        "Flash attention is not installed, using eager implementation. "
-        "Please install the package to use it as the attention implementation."
-    )
-    attn_implementation = "eager"
-
 
 def set_seed(seed: int):
     torch.manual_seed(seed)
@@ -50,7 +38,7 @@ if __name__ == "__main__":
         training_args.model_name,
         low_cpu_mem_usage=True,
         return_dict=True,
-        attn_implementation=attn_implementation,
+        attn_implementation=training_args.attn_implementation,
         device_map="auto",
     )
     tokenizer = AutoTokenizer.from_pretrained(
