@@ -1,21 +1,16 @@
 import random
 from typing import Callable
 
-import torch
 from transformers import AutoTokenizer
 
 from train.args import FinetuningArguments
 
 QA_PREFIX_PAIRS = [
-    ("Instruction: ", "Response: "),
-    ("Q: ", "A: "),
     ("Question: ", "Answer: "),
-    ("Question:\n", "Answer:\n"),
-    ("Q:\n", "A:\n"),
-    ("Instruction:\n", "Response:\n"),
+    ("", ""),
 ]
 INPUT_PREFIXES = [""]
-SEPARATORS = ["\n", "\n\n", " "]
+SEPARATORS = [" "]
 
 
 def get_alpaca_preprocess_fn(

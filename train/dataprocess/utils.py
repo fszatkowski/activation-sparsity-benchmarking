@@ -1,26 +1,28 @@
-import os
-
-import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
 from train.args import FinetuningArguments
 from train.dataprocess.alpaca import get_alpaca_preprocess_fn
 from train.dataprocess.fineweb import get_fineweb_preprocess_fn
-from train.dataprocess.tulu import get_tulu_preprocess_fn
 
 
 def prepare_dataset(training_args: FinetuningArguments, tokenizer: AutoTokenizer):
-    dataset = load_dataset(
-        training_args.dataset_name, split=training_args.dataset_split
-    )
+    if "fineweb" in training_args.dataset_name.lower():
+        # Load just sample 10BT for fineweb dataset to avoid excess downloads
+        dataset = load_dataset(
+            training_args.dataset_name,
+            name="sample-10BT",
+            split=training_args.dataset_split,
+        )
+    else:
+        dataset = load_dataset(
+            training_args.dataset_name, split=training_args.dataset_split
+        )
     dataset = dataset.shuffle(seed=training_args.seed)
 
-    if training_args.dataset_name == "yahma/alpaca-cleaned":
+    if "alpaca" in training_args.dataset_name.lower():
         preprocess_fn = get_alpaca_preprocess_fn(training_args, tokenizer)
-    elif training_args.dataset_name == "allenai/tulu-3-sft-mixture":
-        preprocess_fn = get_tulu_preprocess_fn(training_args, tokenizer)
-    elif training_args.dataset_name == "HuggingFaceFW/fineweb":
+    elif "fineweb" in training_args.dataset_name.lower():
         preprocess_fn = get_fineweb_preprocess_fn(training_args, tokenizer)
     else:
         raise NotImplementedError(
