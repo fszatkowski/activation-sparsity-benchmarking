@@ -1,0 +1,38 @@
+{
+	"layers_to_sparsify": [
+		"model.layers.0.mlp.act_fn",
+		"model.layers.1.mlp.act_fn",
+		"model.layers.2.mlp.act_fn",
+		"model.layers.3.mlp.act_fn",
+		"model.layers.4.mlp.act_fn",
+		"model.layers.5.mlp.act_fn",
+		"model.layers.6.mlp.act_fn",
+		"model.layers.7.mlp.act_fn",
+		"model.layers.8.mlp.act_fn",
+		"model.layers.9.mlp.act_fn",
+		"model.layers.10.mlp.act_fn",
+		"model.layers.11.mlp.act_fn",
+		"model.layers.12.mlp.act_fn",
+		"model.layers.13.mlp.act_fn",
+		"model.layers.14.mlp.act_fn",
+		"model.layers.15.mlp.act_fn"
+	],
+	"hook_mode": [
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output",
+		"output"
+	]
+}

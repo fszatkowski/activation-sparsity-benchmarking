@@ -17,6 +17,22 @@
 		"model.layers.14.mlp",
 		"model.layers.15.mlp"
 	],
-	"topp": 1.0,
-	"sparsification_mode": "input"
+	"hook_mode": [
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input"
+	]
 }

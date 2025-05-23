@@ -19,6 +19,9 @@ model_dir=$1
 task=$2
 eval_dir=$3
 run_name=$4
+sparsification_config=$5
+sparsification_rule=$6
+sparsification_th=$7
 
 dtype=bfloat16
 output_path=${eval_dir}/${task}/${run_name}
@@ -28,6 +31,10 @@ python lm_eval/__main__.py \
     --model_args pretrained=${model_dir},trust_remote_code=True,dtype=${dtype},add_bos_token=True \
     --tasks ${task} \
     --batch_size 1 \
-    --output_path ${output_path}
+    --output_path ${output_path} \
+    --sparsification_config ${sparsification_config} \
+    --sparsification_rule ${sparsification_rule} \
+    --sparsification_th ${sparsification_th}
+
 
 

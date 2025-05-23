@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 from transformers import TrainingArguments
 
@@ -61,7 +61,7 @@ class FinetuningArguments(TrainingArguments):
 @dataclass
 class SparsityEnforcementArguments:
     loss_type: str = field(
-        default="l1",
+        default="none",
         metadata={"help": "The type of sparsity loss to use."},
     )
     loss_weight: float = field(
@@ -69,11 +69,11 @@ class SparsityEnforcementArguments:
         metadata={"help": "The weight of the sparsity loss."},
     )
     modules_to_sparsify: List[str] = field(
-        default_factory=lambda: ["mlp.down_proj"],
+        default_factory=lambda: ["mlp", "mlp.down_proj"],
         metadata={"help": "The modules to sparsify."},
     )
     sparsification_modes: List[str] = field(
-        default_factory=lambda: ["input"],
+        default_factory=lambda: ["input", "input"],
         metadata={"help": "The sparsification mode."},
     )
     modules_to_monitor: List[str] = field(
@@ -84,7 +84,17 @@ class SparsityEnforcementArguments:
         default_factory=lambda: ["input", "input"],
         metadata={"help": "The monitor mode."},
     )
-    monitor_top_p: List[float] = field(
-        default_factory=lambda: [0.99, 0.9, 0.75, 0.5],
-        metadata={"help": "The top p values to monitor during evaluation."},
+    sparsity_metrics: List[str] = field(
+        default_factory=lambda: [
+            "max",
+            "mean",
+            "0.01%max",
+            "0.05%max",
+            "0.1%max",
+            "0.5%max",
+            "1%max",
+            "2%max",
+            "5%max",
+        ],
+        metadata={"help": "Sparsity metrics to use for evaluation."},
     )

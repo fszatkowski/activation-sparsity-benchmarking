@@ -2,9 +2,9 @@ import argparse
 import json
 import logging
 import os
-from pathlib import Path
 import sys
 from functools import partial
+from pathlib import Path
 from typing import Union
 
 from lm_eval import evaluator, utils
@@ -260,23 +260,23 @@ def setup_parser() -> argparse.ArgumentParser:
         help="Sets trust_remote_code to True to execute code to create HF Datasets from the Hub",
     )
     parser.add_argument(
-        "--sparsity_config",
+        "--sparsification_config",
         default=None,
         type=str,
-        help="Path to the config file that specifies the sparsity patterns to measure and enforce",
+        help="Path to the config file that specifies the layers for sparsity enforcement during inference",
     )
     parser.add_argument(
-        "--sparsification_topp",
+        "--sparsification_th_val",
         default=None,
         type=float,
-        help="Value to use for sparsification topp. Overwrites the values in the config.",
+        help="Value to use for sparsification rule. Should be 0-1.",
     )
     parser.add_argument(
-        "--sparsification_mode",
+        "--sparsification_rule",
         default=None,
-        choices=[None, 'input', 'output'],
+        choices=[None, "topp", "topk", "maxp"],
         type=str,
-        help="Sparsification mode.",
+        help="Algorithm to use to select zeroed-out subset during the parsification.",
     )
     return parser
 
@@ -400,13 +400,16 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         cache_requests=args.cache_requests
     )
 
-    if args.sparsity_config is not None:
-        sparsity_monitor = SparsityMonitor(args.sparsity_config, 
-                                           output_dir=args.output_path,
-                                           topp=args.sparsification_topp,
-                                           sparsification_mode=args.sparsification_mode)
+    if args.sparsification_config is not None:
+        sparsity_monitor = SparsityMonitor(
+            args.sparsification_config,
+            output_dir=args.output_path,
+            sparsification_rule=args.sparsification_rule,
+            th_val=args.sparsification_th_val,
+        )
     else:
         sparsity_monitor = None
+
     results = evaluator.simple_evaluate(
         model=args.model,
         model_args=args.model_args,

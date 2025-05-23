@@ -15,25 +15,29 @@ export HF_HOME=/net/tscratch/people/plgfszatkowski/huggingface_cache
 eval "$(conda shell.bash hook)"
 conda activate asb
 
-gradient_accumulation_steps=$1
-num_epochs=$2
-mask_prompt=$3
+lr=$1
+num_samples=$2
+gradient_accumulation_steps=$3
+sparsity_loss=$4
+sparsity_weight=$5
+output_dir=$6
 
-lr=2e-5
+num_epochs=1
 batch_size=2 # Max batch size for Athena jobs
+
 actual_batch_size=$((batch_size*gradient_accumulation_steps))
 
-output_dir=output_models/Alpaca/Llama-3.2-1B-ablations/baseline-nepochs-${num_epochs}-bs-${actual_batch_size}-lr-${lr}-mask_prompt-${mask_prompt}
 
 python train/main.py \
     --model_name meta-llama/Llama-3.2-1B \
     --output_dir ${output_dir} \
-    --run_name llama3-1b-baseline-nepochs-${num_epochs}-bs-${actual_batch_size}-lr-${lr} \
+    --run_name llama3-1b-fineweb-s${num_samples}-${sparsity_loss}-w-${sparsity_weight}-nepochs-${num_epochs}-bs-${actual_batch_size}-lr-${lr} \
     --attn_implementation flash_attention_2 \
     --bf16 True \
-    --dataset_name yahma/alpaca-cleaned \
-    --dataset_split train \
-    --mask_prompt ${mask_prompt} \
+    --dataset_name HuggingFaceFW/fineweb \
+    --dataset_split train[:${num_samples}] \
+    --test_size 0.01 \
+    --mask_prompt False \
     --max_seq_length 2048 \
     --num_train_epochs ${num_epochs} \
     --per_device_train_batch_size ${batch_size} \
@@ -44,13 +48,15 @@ python train/main.py \
     --optim adamw_torch \
     --learning_rate ${lr} \
     --lr_scheduler_type cosine \
-    --warmup_steps 100 \
+    --warmup_steps 500 \
     --weight_decay 0.01 \
+    --loss_type ${sparsity_loss} \
+    --loss_weight ${sparsity_weight} \
     --eval_strategy steps \
-    --eval_steps 0.1 \
-    --save_strategy steps \
+    --eval_steps 0.05 \
+    --save_strategy no \
     --save_steps 0.2 \
     --logging_strategy steps \
     --logging_steps 1 \
     --report_to wandb \
-    --wandb_tags alpaca
+    --wandb_tags fineweb-s${num_samples}

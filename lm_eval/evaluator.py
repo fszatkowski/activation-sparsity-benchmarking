@@ -38,7 +38,6 @@ from lm_eval.utils import (
     simple_parse_args_string,
 )
 
-
 if TYPE_CHECKING:
     from lm_eval.api.model import LM
     from lm_eval.api.task import Task
@@ -74,7 +73,7 @@ def simple_evaluate(
     numpy_random_seed: int = 1234,
     torch_random_seed: int = 1234,
     fewshot_random_seed: int = 1234,
-    sparsity_monitor = None
+    sparsity_monitor=None,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -225,9 +224,7 @@ def simple_evaluate(
             use_cache
             # each rank receives a different cache db.
             # necessary to avoid multiple writes to cache at once
-            + "_rank"
-            + str(lm.rank)
-            + ".db",
+            + "_rank" + str(lm.rank) + ".db",
         )
 
     if task_manager is None:
@@ -295,9 +292,9 @@ def simple_evaluate(
             model_source=model,
             model_args=model_args,
             system_instruction=system_instruction,
-            chat_template=lm.chat_template(apply_chat_template)
-            if apply_chat_template
-            else None,
+            chat_template=(
+                lm.chat_template(apply_chat_template) if apply_chat_template else None
+            ),
             fewshot_as_multiturn=fewshot_as_multiturn,
         )
 
@@ -314,7 +311,7 @@ def simple_evaluate(
         apply_chat_template=apply_chat_template,
         fewshot_as_multiturn=fewshot_as_multiturn,
         verbosity=verbosity,
-        sparsity_monitor=sparsity_monitor
+        sparsity_monitor=sparsity_monitor,
     )
 
     if lm.rank == 0:
@@ -374,7 +371,7 @@ def evaluate(
     apply_chat_template: Union[bool, str] = False,
     fewshot_as_multiturn: bool = False,
     verbosity: str = "INFO",
-    sparsity_monitor = None
+    sparsity_monitor=None,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -460,12 +457,12 @@ def evaluate(
             system_instruction=system_instruction,
             apply_chat_template=bool(apply_chat_template),
             fewshot_as_multiturn=fewshot_as_multiturn,
-            chat_template=getattr(lm, "apply_chat_template")
-            if apply_chat_template
-            else None,
-            tokenizer_name=getattr(lm, "tokenizer_name", "")
-            if apply_chat_template
-            else "",
+            chat_template=(
+                getattr(lm, "apply_chat_template") if apply_chat_template else None
+            ),
+            tokenizer_name=(
+                getattr(lm, "tokenizer_name", "") if apply_chat_template else ""
+            ),
         )
         eval_logger.debug(
             f"Task: {task_output.task_name}; number of requests on this rank: {len(task.instances)}"
@@ -513,7 +510,6 @@ def evaluate(
         resps = getattr(lm, reqtype)(cloned_reqs)
 
         if sparsity_monitor is not None:
-            sparsity_monitor.plot_input_sparsity_data()
             sparsity_monitor.save_layer_sparsity_data()
 
         # put responses from model into a list of length K for each request.

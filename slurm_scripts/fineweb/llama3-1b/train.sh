@@ -34,6 +34,7 @@ python train/main.py \
     --bf16 True \
     --dataset_name HuggingFaceFW/fineweb \
     --dataset_split train[:${num_samples}] \
+    --test_size 0.01 \
     --mask_prompt False \
     --max_seq_length 2048 \
     --num_train_epochs ${num_epochs} \

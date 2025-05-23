@@ -1,5 +1,5 @@
 {
-	"layers_to_monitor": [
+	"layers_to_sparsify": [
 		"model.layers.0.mlp.down_proj",
 		"model.layers.1.mlp.down_proj",
 		"model.layers.2.mlp.down_proj",
@@ -17,15 +17,22 @@
 		"model.layers.14.mlp.down_proj",
 		"model.layers.15.mlp.down_proj"
 	],
-	"topp": [
-		0.9,
-		0.95,
-		0.96,
-		0.97,
-		0.98,
-		0.99,
-		0.999,
-		0.995,
-		1.0
+	"hook_mode": [
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input",
+		"input"
 	]
 }

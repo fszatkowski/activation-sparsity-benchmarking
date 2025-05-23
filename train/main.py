@@ -63,19 +63,9 @@ if __name__ == "__main__":
         sparsification_modes=sparsity_enforcement_args.sparsification_modes,
         modules_to_monitor=sparsity_enforcement_args.modules_to_monitor,
         monitor_modes=sparsity_enforcement_args.monitor_modes,
-        monitor_top_p=sparsity_enforcement_args.monitor_top_p,
+        sparsity_metrics=sparsity_enforcement_args.sparsity_metrics,
     )
-
     trainer.train()
-
-    # Generate an answer to a sample input
-    sample_txt = "How are you?"
-    inputs = tokenizer.encode(sample_txt, return_tensors="pt").to(model.device)
-    outputs = model.generate(
-        inputs,
-        max_length=50,
-    )
-    output_txt = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     model.save_pretrained(training_args.output_dir)
     tokenizer.save_pretrained(training_args.output_dir)
