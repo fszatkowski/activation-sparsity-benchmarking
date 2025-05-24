@@ -5,8 +5,6 @@ from typing import List, Optional, Tuple
 
 import torch
 
-from lm_eval.plotting_utils import plot_heatmap
-
 
 class InputTokensHook:
     """
@@ -163,6 +161,11 @@ class SparsityMonitor:
         th_val: Optional[float] = None,
     ):
         self.sparsification_rule = sparsification_rule
+        assert (
+            th_val is not None
+        ), "Threshold value must be provided for sparsified infreence."
+        assert th_val > 0, "Threshold value must be greater than 0."
+        assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val
 
         with Path(sparsification_config_path).open("r") as f:
@@ -208,9 +211,7 @@ class SparsityMonitor:
                 )
                 hook_module.register_forward_pre_hook(hook)
             else:
-                raise ValueError(
-                    f"Invalid sparsification mode: {self.sparsification_mode}"
-                )
+                raise ValueError(f"Invalid sparsification mode: {hook_mode}")
             self.sparsity_hooks.append(hook)
 
     def save_layer_sparsity_data(self):
@@ -221,6 +222,9 @@ class SparsityMonitor:
             layer_name = hook.layer_name
             sparse_counts = sum(hook.sparse_counts)
             total_counts = sum(hook.total_counts)
+            assert (
+                total_counts != 0
+            ), f"Total counts for {layer_name} is 0. Check the input mask."
             sparsity = sparse_counts / total_counts
             layer_sparisty_stats[layer_name] = sparsity
             total_sparse_neurons += sparse_counts
