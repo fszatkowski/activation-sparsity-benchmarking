@@ -145,6 +145,10 @@ def create_hooks(
         if name.endswith(module_name)
     ]
     modules_to_sparsify = sorted(modules_to_sparsify, key=lambda x: x[0])
+    assert (
+        len(modules_to_sparsify) > 0
+    ), f"No modules with name containing '{module_name}' found in the model."
+
     hooks: List[ActivationSparstityHook] = []
     for name, module in modules_to_sparsify:
         if mode == "input":

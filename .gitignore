@@ -26,3 +26,5 @@ examples/wandb
 
 /*.env
 /*.sh
+output*/
+.DS_Store

@@ -45,34 +45,34 @@ class SparsityEnforcementTrainer(Trainer):
         self.sparsity_loss = get_sparsity_loss(loss_type, loss_weight)
 
         # Find the overlap across the module, mode for sparsification and monitoring
-        all_modules = sorted(list(set(modules_to_sparsify + modules_to_monitor)))
-        all_modes = sorted(list(set(sparsification_modes + monitor_modes)))
+        sparsify_modules_modes = [
+            (module, mode)
+            for module, mode in zip(modules_to_sparsify, sparsification_modes)
+        ]
+        monitor_modules_modes = [
+            (module, mode) for module, mode in zip(modules_to_monitor, monitor_modes)
+        ]
+        all_modules_modes = list(set(sparsify_modules_modes + monitor_modules_modes))
 
         self.sparsity_metrics: List[SparsityMetric] = instantiate_sparsity_metrics(
             sparsity_metrics
         )
         self.eval_metrics: Dict[str, Dict[str, List[float]]] = {}
         self.sparsification_hooks: List[ActivationSparstityHook] = []
-        for module in all_modules:
-            for mode in all_modes:
-                sparsify = (
-                    module in modules_to_sparsify and mode in sparsification_modes
-                )
-                monitor = module in modules_to_monitor and mode in monitor_modes
 
-                if not sparsify and not monitor:
-                    continue
-
-                hooks = create_hooks(
-                    model=self.model,
-                    module_name=module,
-                    mode=mode,
-                    loss=self.sparsity_loss,
-                    metrics=self.sparsity_metrics,
-                    sparsify=sparsify,
-                    monitor=monitor,
-                )
-                self.sparsification_hooks.extend(hooks)
+        for module, mode in all_modules_modes:
+            sparsify = (module, mode) in sparsify_modules_modes
+            monitor = (module, mode) in monitor_modules_modes
+            hooks = create_hooks(
+                model=self.model,
+                module_name=module,
+                mode=mode,
+                loss=self.sparsity_loss,
+                metrics=self.sparsity_metrics,
+                sparsify=sparsify,
+                monitor=monitor,
+            )
+            self.sparsification_hooks.extend(hooks)
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         # Manually set the attention mask for sparsity hooks to enable masking
@@ -210,9 +210,11 @@ class SparsityEnforcementTrainer(Trainer):
             ignore_keys=ignore_keys,
         )
         for hook in self.sparsification_hooks:
-            module_name = hook.module_name
-            for metric_name, metric_value in hook.eval_metrics.items():
-                assert metric_value is not None
-                self.eval_metrics[metric_name][module_name].extend(metric_value)
-
+            if hook.monitor:
+                module_name = hook.module_name
+                for metric_name, metric_value in hook.eval_metrics.items():
+                    assert (
+                        metric_value is not None
+                    ), f"Value is None for {metric_name} at {module_name} hook."
+                    self.eval_metrics[metric_name][module_name].extend(metric_value)
         return outputs
