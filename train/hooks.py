@@ -144,7 +144,7 @@ def create_hooks(
     model: torch.nn.Module,
     module_name: str,
     mode: str,
-    loss: ActivationSparsityLoss,
+    loss: Optional[ActivationSparsityLoss],
     metrics: List[SparsityMetric],
     sparsify: bool,
     monitor: bool,

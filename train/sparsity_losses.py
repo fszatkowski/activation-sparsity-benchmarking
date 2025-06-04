@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import torch
 
@@ -7,9 +8,10 @@ SPARSIFICATION_MODES = ["input", "output"]
 
 
 class ActivationSparsityLoss(torch.nn.Module, ABC):
-    def __init__(self, name: str, weight: float = 1.0):
+    def __init__(self, name: str, weight: float = 1.0, shift: Optional[float] = None):
         self.name = name
         self.weight = weight
+        self.shift = shift
 
     @abstractmethod
     def __call__(self, tensor: torch.Tensor, attn_mask: torch.Tensor) -> torch.Tensor:
@@ -18,14 +20,17 @@ class ActivationSparsityLoss(torch.nn.Module, ABC):
 
 
 class HoyerLoss(ActivationSparsityLoss):
-    def __init__(self, weight: float = 1.0):
-        super().__init__("hoyer", weight)
+    def __init__(self, weight: float = 1.0, shift: Optional[float] = None):
+        super().__init__("hoyer", weight, shift)
 
     def __call__(
         self, tensor: torch.Tensor, attn_mask: torch.Tensor, eps: float = 1e-6
     ) -> torch.Tensor:
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
+        if self.shift is not None:
+            tensor = tensor.clamp(min=self.shift) - self.shift
+
         l1_norm = tensor.abs().sum(dim=-1)  # (batch_size, seq_len)
         l2_norm_squared = (tensor**2).sum(dim=-1)  # (batch_size, seq_len)
 
@@ -37,39 +42,47 @@ class HoyerLoss(ActivationSparsityLoss):
 
 
 class L1Loss(ActivationSparsityLoss):
-    def __init__(self, weight: float = 1.0):
-        super().__init__("l1", weight)
+    def __init__(self, weight: float = 1.0, shift: Optional[float] = None):
+        super().__init__("l1", weight, shift)
 
     def __call__(self, tensor: torch.Tensor, attn_mask: torch.Tensor) -> torch.Tensor:
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
+        if self.shift is not None:
+            tensor = tensor.clamp(min=self.shift) - self.shift
+
         l1_norm = tensor.abs().sum(dim=-1)  # (batch_size, seq_len)
         masked_norm = attn_mask * l1_norm
         return self.weight * masked_norm.sum(dim=-1) / attn_mask.sum(dim=-1)
 
 
 class L2Loss(ActivationSparsityLoss):
-    def __init__(self, weight: float = 1.0):
-        super().__init__("l2", weight)
+    def __init__(self, weight: float = 1.0, shift: Optional[float] = None):
+        super().__init__("l2", weight, shift)
 
     def __call__(
         self, tensor: torch.Tensor, attn_mask: torch.Tensor, eps: float = 1e-6
     ) -> torch.Tensor:
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
+        if self.shift is not None:
+            tensor = tensor.clamp(min=self.shift) - self.shift
+
         l2_norm = torch.sqrt((tensor**2).sum(-1) + eps)  # (batch_size, seq_len)
         masked_norm = attn_mask * l2_norm
         return self.weight * masked_norm.sum(dim=-1) / attn_mask.sum(dim=-1)
 
 
-def get_sparsity_loss(loss_name: str, weight: float):
+def get_sparsity_loss(
+    loss_name: str, weight: float, shift: Optional[float] = None
+) -> Optional[ActivationSparsityLoss]:
     loss_name = loss_name.lower()
     if loss_name == "l1":
-        return L1Loss(weight)
+        return L1Loss(weight, shift)
     elif loss_name == "l2":
-        return L2Loss(weight)
+        return L2Loss(weight, shift)
     elif loss_name == "hoyer":
-        return HoyerLoss(weight)
+        return HoyerLoss(weight, shift)
     elif loss_name == "none":
         return None
     else:

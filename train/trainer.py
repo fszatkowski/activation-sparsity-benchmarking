@@ -18,8 +18,9 @@ SPARSIFICATION_MODES = ["input", "output"]
 class SparsityEnforcementTrainer(Trainer):
     def __init__(
         self,
-        loss_type: str,
-        loss_weight: float,
+        sparsity_loss_type: str,
+        sparsity_loss_weight: float,
+        sparsity_loss_shift: Optional[float],
         modules_to_sparsify: List[str],
         sparsification_modes: List[str],
         modules_to_monitor: List[str],
@@ -33,7 +34,7 @@ class SparsityEnforcementTrainer(Trainer):
     ):
         super().__init__(*args, **kwargs)
 
-        if (loss_type.lower() == "none" or loss_weight == 0) and len(
+        if (sparsity_loss_type.lower() == "none" or sparsity_loss_weight == 0) and len(
             modules_to_sparsify
         ) > 0:
             print()
@@ -45,7 +46,9 @@ class SparsityEnforcementTrainer(Trainer):
             print()
             modules_to_sparsify = []
 
-        self.sparsity_loss = get_sparsity_loss(loss_type, loss_weight)
+        self.sparsity_loss = get_sparsity_loss(
+            sparsity_loss_type, sparsity_loss_weight, sparsity_loss_shift
+        )
 
         # Find the overlap across the module, mode for sparsification and monitoring
         sparsify_modules_modes = [

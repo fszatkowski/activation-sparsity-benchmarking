@@ -68,6 +68,13 @@ class SparsityEnforcementArguments:
         default=0.01,
         metadata={"help": "The weight of the sparsity loss."},
     )
+    loss_shift: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "The shift value for the sparsity loss. "
+            "If set, the loss will be computed on (activation - shift)."
+        },
+    )
     modules_to_sparsify: List[str] = field(
         default_factory=lambda: ["mlp", "mlp.down_proj"],
         metadata={"help": "The modules to sparsify."},
