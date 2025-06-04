@@ -49,6 +49,25 @@ if __name__ == "__main__":
     if model.config.pad_token_id is None:
         model.config.pad_token_id = tokenizer.eos_token_id
 
+    if sparsity_enforcement_args.teacher_model_name:
+        if training_args.fp16:
+            torch_dtype = torch.float16
+        elif training_args.bf16:
+            torch_dtype = torch.bfloat16
+        else:
+            torch_dtype = torch.float32
+
+        teacher = AutoModelForCausalLM.from_pretrained(
+            sparsity_enforcement_args.teacher_model_name,
+            low_cpu_mem_usage=True,
+            return_dict=True,
+            attn_implementation=training_args.attn_implementation,
+            device_map="auto",
+            torch_dtype=torch_dtype,
+        )
+    else:
+        teacher = None
+
     dataset = prepare_dataset(training_args, tokenizer)
 
     trainer = SparsityEnforcementTrainer(
@@ -64,6 +83,9 @@ if __name__ == "__main__":
         modules_to_monitor=sparsity_enforcement_args.modules_to_monitor,
         monitor_modes=sparsity_enforcement_args.monitor_modes,
         sparsity_metrics=sparsity_enforcement_args.sparsity_metrics,
+        teacher=teacher,
+        kd_loss_weight=sparsity_enforcement_args.kd_loss_weight,
+        kd_temperature=sparsity_enforcement_args.kd_temperature,
     )
     trainer.train()
 

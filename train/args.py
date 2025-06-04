@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from transformers import TrainingArguments
 
@@ -97,4 +97,22 @@ class SparsityEnforcementArguments:
             "5%max",
         ],
         metadata={"help": "Sparsity metrics to use for evaluation."},
+    )
+    kd_loss_weight: float = field(
+        default=0.0,
+        metadata={
+            "help": "The weight of the knowledge distillation loss. "
+            "If set to 0, no knowledge distillation will be performed."
+        },
+    )
+    kd_temperature: float = field(
+        default=1.0,
+        metadata={
+            "help": "The temperature for knowledge distillation. "
+            "Higher values produce softer probabilities."
+        },
+    )
+    teacher_model_name: str = field(
+        default="meta-llama/Llama-3.2-1B",
+        metadata={"help": "The name of the teacher model for knowledge distillation."},
     )

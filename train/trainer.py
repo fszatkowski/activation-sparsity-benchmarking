@@ -25,6 +25,9 @@ class SparsityEnforcementTrainer(Trainer):
         modules_to_monitor: List[str],
         monitor_modes: List[str],
         sparsity_metrics: List[str],
+        kd_loss_weight: float = 0.0,
+        kd_temperature: float = 1.0,
+        teacher: Optional[torch.nn.Module] = None,
         *args,
         **kwargs,
     ):
@@ -74,6 +77,17 @@ class SparsityEnforcementTrainer(Trainer):
             )
             self.sparsification_hooks.extend(hooks)
 
+        if kd_loss_weight:
+            assert teacher is not None, "Teacher model must be provided for KD loss"
+            # Remove the gradient tracking for the teacher model
+            for param in teacher.parameters():
+                param.requires_grad = False
+            # Set the teacher model to evaluation mode
+            teacher.eval()
+        self.teacher = teacher
+        self.kd_loss_weight = kd_loss_weight
+        self.kd_temperature = kd_temperature
+
     def training_step(self, model, inputs, num_items_in_batch=None):
         # Manually set the attention mask for sparsity hooks to enable masking
         for hook in self.sparsification_hooks:
@@ -82,12 +96,37 @@ class SparsityEnforcementTrainer(Trainer):
 
         return super().training_step(model, inputs, num_items_in_batch)
 
+    def _kld_loss(
+        self,
+        pred_logits: torch.Tensor,
+        teacher_logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> torch.Tensor:
+        # Compute KLD loss between the student and teacher logits,
+        # Using targets to mask off the padded tokens
+        # Compute probs including self.temperature
+        if self.kd_temperature != 1.0:
+            pred_logits = pred_logits / self.kd_temperature
+            teacher_logits = teacher_logits / self.kd_temperature
+        pred_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
+        teacher_probs = torch.nn.functional.log_softmax(teacher_logits, dim=-1)
+
+        kld_loss = torch.nn.functional.kl_div(
+            pred_probs, teacher_probs, reduction="none", log_target=True
+        )
+        kld_loss = kld_loss.mean(dim=-1)
+        # Mask the loss using the targets
+        mask = targets != -100
+        kld_loss = (kld_loss * mask).sum() / mask.sum()
+
+        return kld_loss
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
-        if return_outputs:
+        if return_outputs or self.teacher is not None:
             (ce_loss, outputs) = super().compute_loss(
-                model, inputs, return_outputs, num_items_in_batch
+                model, inputs, True, num_items_in_batch
             )
         else:
             ce_loss = super().compute_loss(
@@ -114,6 +153,14 @@ class SparsityEnforcementTrainer(Trainer):
             loss = ce_loss + sparsification_loss
         else:
             loss = ce_loss
+
+        # Compute the knowledge distillation loss if using a teacher model
+        if self.teacher is not None and self.kd_loss_weight > 0:
+            with torch.no_grad():
+                teacher_logits = self.teacher(**inputs).logits.detach()
+            kld_loss = self._kld_loss(outputs.logits, teacher_logits, inputs["labels"])
+            wandb_log_if_enabled({"train_kd_loss/total": kld_loss.item()})
+            loss += kld_loss * self.kd_loss_weight
 
         return (loss, outputs) if return_outputs else loss
 
@@ -153,6 +200,15 @@ class SparsityEnforcementTrainer(Trainer):
         )
 
         self._handle_eval_sparsity_metrics()
+
+        # Reset the eval metrics and hooks at the end
+        for hook in self.sparsification_hooks:
+            hook.reset()
+        self.eval_metrics = {}
+
+        # Free unused memory
+        torch.cuda.empty_cache()
+
         return eval_outputs
 
     def _handle_eval_sparsity_metrics(self) -> None:

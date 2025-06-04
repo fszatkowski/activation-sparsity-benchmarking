@@ -28,3 +28,4 @@ examples/wandb
 /*.sh
 output*/
 .DS_Store
+debug*

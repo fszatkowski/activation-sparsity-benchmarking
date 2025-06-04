@@ -57,6 +57,16 @@ class ActivationSparstityHook:
         self.attn_mask = None
         self.loss_val = None
 
+    def reset(self):
+        self.loss_val = None
+        self.attn_mask = None
+        self.train_metrics = {"sparsity_loss": None}
+        self.eval_metrics = {
+            "sparsity_loss": None,
+            **{metric.name: None for metric in self.metrics},
+            "token_counts": None,
+        }
+
     def set_train_mode(self):
         self.disabled = False
         self.train = True
