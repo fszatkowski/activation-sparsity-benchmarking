@@ -29,7 +29,7 @@ def get_topp_mask(
 
     # Use more precise dtype for the cumsum
     activation_cumsum = sorted_activations.cumsum(
-        dim=-1, dtype=torch.float32
+        dim=-1, dtype=torch.float64
     )  # shape: [batch_size, seq_len, hidden_dim]
     activation_sums = activation_cumsum[:, :, -1].unsqueeze(
         -1
