@@ -19,26 +19,8 @@ class ActivationSparsityLoss(torch.nn.Module, ABC):
         pass
 
 
-class HoyerLoss(ActivationSparsityLoss):
-    def __init__(self, weight: float = 1.0, shift: Optional[float] = None):
-        super().__init__("hoyer", weight, shift)
-
-    def __call__(
-        self, tensor: torch.Tensor, attn_mask: torch.Tensor, eps: float = 1e-6
-    ) -> torch.Tensor:
-        # Tensor: (batch_size, seq_len, hidden_size)
-        # attn_mask: (batch_size, seq_len)
-        if self.shift is not None:
-            tensor = tensor.clamp(min=self.shift) - self.shift
-
-        l1_norm = tensor.abs().sum(dim=-1)  # (batch_size, seq_len)
-        l2_norm_squared = (tensor**2).sum(dim=-1)  # (batch_size, seq_len)
-
-        per_token_hoyer_loss = l1_norm**2 / (
-            l2_norm_squared + eps
-        )  # (batch_size, seq_len)
-        masked_hoyer_loss = attn_mask * per_token_hoyer_loss
-        return self.weight * masked_hoyer_loss.sum(dim=1) / attn_mask.sum(dim=-1)
+def _masked_l1_loss(tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    return (mask * tensor.abs().sum(dim=-1)).sum(dim=-1) / mask.sum(dim=-1)
 
 
 class L1Loss(ActivationSparsityLoss):
@@ -49,11 +31,17 @@ class L1Loss(ActivationSparsityLoss):
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
         if self.shift is not None:
-            tensor = tensor.clamp(min=self.shift) - self.shift
+            tensor = tensor.clamp_(min=self.shift).sub_(self.shift)
 
-        l1_norm = tensor.abs().sum(dim=-1)  # (batch_size, seq_len)
-        masked_norm = attn_mask * l1_norm
-        return self.weight * masked_norm.sum(dim=-1) / attn_mask.sum(dim=-1)
+        return self.weight * _masked_l1_loss(tensor, attn_mask)
+
+
+def _masked_l2_norm(
+    tensor: torch.Tensor, mask: torch.Tensor, eps: float
+) -> torch.Tensor:
+    return (mask * torch.sqrt((tensor**2).sum(dim=-1) + eps)).sum(dim=-1) / mask.sum(
+        dim=-1
+    )
 
 
 class L2Loss(ActivationSparsityLoss):
@@ -66,11 +54,32 @@ class L2Loss(ActivationSparsityLoss):
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
         if self.shift is not None:
-            tensor = tensor.clamp(min=self.shift) - self.shift
+            tensor = tensor.clamp_(min=self.shift).sub_(self.shift)
 
-        l2_norm = torch.sqrt((tensor**2).sum(-1) + eps)  # (batch_size, seq_len)
-        masked_norm = attn_mask * l2_norm
-        return self.weight * masked_norm.sum(dim=-1) / attn_mask.sum(dim=-1)
+        return self.weight * _masked_l2_norm(tensor, attn_mask, eps)
+
+
+def _masked_hoyer_loss(
+    tensor: torch.Tensor, mask: torch.Tensor, eps: float
+) -> torch.Tensor:
+    return (
+        mask * ((tensor.abs().sum(dim=-1) ** 2) / ((tensor**2).sum(dim=-1) + eps))
+    ).sum(dim=-1) / mask.sum(dim=-1)
+
+
+class HoyerLoss(ActivationSparsityLoss):
+    def __init__(self, weight: float = 1.0, shift: Optional[float] = None):
+        super().__init__("hoyer", weight, shift)
+
+    def __call__(
+        self, tensor: torch.Tensor, attn_mask: torch.Tensor, eps: float = 1e-6
+    ) -> torch.Tensor:
+        # Tensor: (batch_size, seq_len, hidden_size)
+        # attn_mask: (batch_size, seq_len)
+        if self.shift is not None:
+            tensor = tensor.clamp_(min=self.shift).sub_(self.shift)
+
+        return self.weight * _masked_hoyer_loss(tensor, attn_mask, eps)
 
 
 def get_sparsity_loss(

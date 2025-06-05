@@ -49,7 +49,7 @@ if __name__ == "__main__":
     if model.config.pad_token_id is None:
         model.config.pad_token_id = tokenizer.eos_token_id
 
-    if sparsity_enforcement_args.teacher_model_name:
+    if sparsity_enforcement_args.kd_loss_weight > 0:
         if training_args.fp16:
             torch_dtype = torch.float16
         elif training_args.bf16:

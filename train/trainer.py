@@ -6,7 +6,7 @@ import torch
 from datasets import Dataset
 from transformers import Trainer
 
-from train.hooks import ActivationSparstityHook, create_hooks
+from train.hooks import create_hooks
 from train.sparsity_losses import get_sparsity_loss
 from train.sparsity_metrics import SparsityMetric, instantiate_sparsity_metrics
 from train.wandb_utils import wandb_log_if_enabled
@@ -49,36 +49,20 @@ class SparsityEnforcementTrainer(Trainer):
         self.sparsity_loss = get_sparsity_loss(
             sparsity_loss_type, sparsity_loss_weight, sparsity_loss_shift
         )
-
-        # Find the overlap across the module, mode for sparsification and monitoring
-        sparsify_modules_modes = [
-            (module, mode)
-            for module, mode in zip(modules_to_sparsify, sparsification_modes)
-        ]
-        monitor_modules_modes = [
-            (module, mode) for module, mode in zip(modules_to_monitor, monitor_modes)
-        ]
-        all_modules_modes = list(set(sparsify_modules_modes + monitor_modules_modes))
-
         self.sparsity_metrics: List[SparsityMetric] = instantiate_sparsity_metrics(
             sparsity_metrics
         )
-        self.eval_metrics: Dict[str, Dict[str, List[float]]] = {}
-        self.sparsification_hooks: List[ActivationSparstityHook] = []
+        self.sparsification_hooks, self.monitor_hooks = create_hooks(
+            model=self.model,
+            modules_to_sparsify=modules_to_sparsify,
+            sparsification_modes=sparsification_modes,
+            modules_to_monitor=modules_to_monitor,
+            monitor_modes=monitor_modes,
+            loss=self.sparsity_loss,
+            metrics=self.sparsity_metrics,
+        )
 
-        for module, mode in all_modules_modes:
-            sparsify = (module, mode) in sparsify_modules_modes
-            monitor = (module, mode) in monitor_modules_modes
-            hooks = create_hooks(
-                model=self.model,
-                module_name=module,
-                mode=mode,
-                loss=self.sparsity_loss,
-                metrics=self.sparsity_metrics,
-                sparsify=sparsify,
-                monitor=monitor,
-            )
-            self.sparsification_hooks.extend(hooks)
+        self.eval_metrics: Dict[str, Dict[str, List[float]]] = {}
 
         if kd_loss_weight:
             assert teacher is not None, "Teacher model must be provided for KD loss"
@@ -91,10 +75,17 @@ class SparsityEnforcementTrainer(Trainer):
         self.kd_loss_weight = kd_loss_weight
         self.kd_temperature = kd_temperature
 
+    def _set_hooks_training_mode(self) -> None:
+        # Set the hooks to training mode
+        for sparsification_hook in self.sparsification_hooks:
+            sparsification_hook.enable()
+        for monitor_hook in self.monitor_hooks:
+            monitor_hook.disable()
+
     def training_step(self, model, inputs, num_items_in_batch=None):
         # Manually set the attention mask for sparsity hooks to enable masking
+        self._set_hooks_training_mode()
         for hook in self.sparsification_hooks:
-            hook.set_train_mode()
             hook.set_attn_mask(inputs["attention_mask"])
 
         return super().training_step(model, inputs, num_items_in_batch)
@@ -127,6 +118,8 @@ class SparsityEnforcementTrainer(Trainer):
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
+        self.log_gpu_memory("Pre compute loss call")
+
         if return_outputs or self.teacher is not None:
             (ce_loss, outputs) = super().compute_loss(
                 model, inputs, True, num_items_in_batch
@@ -136,8 +129,9 @@ class SparsityEnforcementTrainer(Trainer):
                 model, inputs, return_outputs, num_items_in_batch
             )
 
+        training = any(h.active for h in self.sparsification_hooks)
         # If any of the hooks are in training mode, also compute and log the sparsity loss
-        if any(h.train for h in self.sparsification_hooks):
+        if training:
             sparsification_losses = [
                 hook.loss_val
                 for hook in self.sparsification_hooks
@@ -157,13 +151,15 @@ class SparsityEnforcementTrainer(Trainer):
         else:
             loss = ce_loss
 
-        # Compute the knowledge distillation loss if using a teacher model
-        if self.teacher is not None and self.kd_loss_weight > 0:
+        # Compute the knowledge distillation loss if model in train mode and using a teacher model
+        if self.model.training and self.teacher is not None and self.kd_loss_weight > 0:
             with torch.no_grad():
                 teacher_logits = self.teacher(**inputs).logits.detach()
             kld_loss = self._kld_loss(outputs.logits, teacher_logits, inputs["labels"])
             wandb_log_if_enabled({"train_kd_loss/total": kld_loss.item()})
-            loss += kld_loss * self.kd_loss_weight
+            loss += self.kd_loss_weight * kld_loss
+
+        self.log_gpu_memory("Post compute loss call")
 
         return (loss, outputs) if return_outputs else loss
 
@@ -182,8 +178,15 @@ class SparsityEnforcementTrainer(Trainer):
             )
             train_metrics[f"{key}/avg"] = float(np.mean(key_vals))
         train_metrics["train_ce_loss/total"] = ce_loss.item()
-
         wandb_log_if_enabled(train_metrics)
+
+    @staticmethod
+    def log_gpu_memory(stage: str):
+        print(f"[{stage}]")
+        print(f"Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+        print(f"Reserved: {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
+        print(f"Max Reserved: {torch.cuda.max_memory_reserved() / 1024**3:.2f} GB")
+        print()
 
     def evaluate(
         self,
@@ -191,27 +194,16 @@ class SparsityEnforcementTrainer(Trainer):
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "eval",
     ) -> Dict[str, float]:  # Enable monitor hooks and disable sparsification hooks
-        # Restart sparsity metrics
         self.eval_metrics = {
             metric_name: defaultdict(list)
-            for metric_name in self.sparsification_hooks[0].eval_metrics.keys()
+            for metric_name in self.monitor_hooks[0].eval_metrics.keys()
         }
         eval_outputs = super().evaluate(
             eval_dataset=eval_dataset,
             ignore_keys=ignore_keys,
             metric_key_prefix=metric_key_prefix,
         )
-
         self._handle_eval_sparsity_metrics()
-
-        # Reset the eval metrics and hooks at the end
-        for hook in self.sparsification_hooks:
-            hook.reset()
-        self.eval_metrics = {}
-
-        # Free unused memory
-        torch.cuda.empty_cache()
-
         return eval_outputs
 
     def _handle_eval_sparsity_metrics(self) -> None:
@@ -250,6 +242,13 @@ class SparsityEnforcementTrainer(Trainer):
         }
         wandb_log_if_enabled(wandb_metrics)
 
+    def _set_hooks_eval_mode(self) -> None:
+        # Set the hooks to evaluation mode
+        for sparsification_hook in self.sparsification_hooks:
+            sparsification_hook.disable()
+        for monitor_hook in self.monitor_hooks:
+            monitor_hook.enable()
+
     def prediction_step(
         self,
         model: torch.nn.Module,
@@ -258,8 +257,8 @@ class SparsityEnforcementTrainer(Trainer):
         ignore_keys: Optional[List[str]] = None,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         # Manually set the attention mask for sparsity hooks to enable masking
-        for hook in self.sparsification_hooks:
-            hook.set_eval_mode()
+        self._set_hooks_eval_mode()
+        for hook in self.monitor_hooks:
             hook.set_attn_mask(inputs["attention_mask"])
 
         outputs = super().prediction_step(
@@ -268,12 +267,11 @@ class SparsityEnforcementTrainer(Trainer):
             prediction_loss_only=prediction_loss_only,
             ignore_keys=ignore_keys,
         )
-        for hook in self.sparsification_hooks:
-            if hook.monitor:
-                module_name = hook.module_name
-                for metric_name, metric_value in hook.eval_metrics.items():
-                    assert (
-                        metric_value is not None
-                    ), f"Value is None for {metric_name} at {module_name} hook."
-                    self.eval_metrics[metric_name][module_name].extend(metric_value)
+        for hook in self.monitor_hooks:
+            module_name = hook.module_name
+            for metric_name, metric_value in hook.eval_metrics.items():
+                assert (
+                    metric_value is not None
+                ), f"Value is None for {metric_name} at {module_name} hook."
+                self.eval_metrics[metric_name][module_name].extend(metric_value)
         return outputs

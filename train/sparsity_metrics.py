@@ -86,13 +86,3 @@ def instantiate_sparsity_metrics(metric_names: List[str]) -> List[SparsityMetric
         else:
             raise ValueError(f"Unknown metric name: {metric_name}")
     return metrics
-
-
-if __name__ == "__main__":
-    metrics = instantiate_sparsity_metrics(["max", "mean", "10%max"])
-    input = torch.rand((8, 128, 768))
-    attn_mask = torch.ones((8, 128))
-    for metric in metrics:
-        val = metric(input, attn_mask)
-        print(f"Metric: {metric.name}")
-        print(val, val.shape)
