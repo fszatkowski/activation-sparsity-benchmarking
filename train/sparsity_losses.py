@@ -31,7 +31,7 @@ class L1Loss(ActivationSparsityLoss):
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
         if self.shift is not None:
-            tensor = tensor.clamp_(min=self.shift).sub_(self.shift)
+            tensor = torch.clamp(tensor, min=self.shift) - self.shift
 
         return self.weight * _masked_l1_loss(tensor, attn_mask)
 
@@ -54,7 +54,7 @@ class L2Loss(ActivationSparsityLoss):
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
         if self.shift is not None:
-            tensor = tensor.clamp_(min=self.shift).sub_(self.shift)
+            tensor = torch.clamp(tensor, min=self.shift) - self.shift
 
         return self.weight * _masked_l2_norm(tensor, attn_mask, eps)
 
@@ -77,7 +77,7 @@ class HoyerLoss(ActivationSparsityLoss):
         # Tensor: (batch_size, seq_len, hidden_size)
         # attn_mask: (batch_size, seq_len)
         if self.shift is not None:
-            tensor = tensor.clamp_(min=self.shift).sub_(self.shift)
+            tensor = torch.clamp(tensor, min=self.shift) - self.shift
 
         return self.weight * _masked_hoyer_loss(tensor, attn_mask, eps)
 

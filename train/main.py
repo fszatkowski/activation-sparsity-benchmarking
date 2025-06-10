@@ -87,8 +87,14 @@ if __name__ == "__main__":
         teacher=teacher,
         kd_loss_weight=sparsity_enforcement_args.kd_loss_weight,
         kd_temperature=sparsity_enforcement_args.kd_temperature,
+        relufication=sparsity_enforcement_args.relufication,
+        relufication_target_modules=sparsity_enforcement_args.relufication_target_modules,
+        relufication_mode=sparsity_enforcement_args.relufication_mode,
     )
     trainer.train()
+
+    if trainer.relufication:
+        model.config.hidden_act = "relu"
 
     model.save_pretrained(training_args.output_dir)
     tokenizer.save_pretrained(training_args.output_dir)

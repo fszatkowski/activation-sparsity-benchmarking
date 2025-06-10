@@ -1,3 +1,4 @@
+import math
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -7,6 +8,7 @@ from datasets import Dataset
 from transformers import Trainer
 
 from train.hooks import create_hooks
+from train.relufication import apply_relufication
 from train.sparsity_losses import get_sparsity_loss
 from train.sparsity_metrics import SparsityMetric, instantiate_sparsity_metrics
 from train.wandb_utils import wandb_log_if_enabled
@@ -29,11 +31,46 @@ class SparsityEnforcementTrainer(Trainer):
         kd_loss_weight: float = 0.0,
         kd_temperature: float = 1.0,
         teacher: Optional[torch.nn.Module] = None,
+        relufication: bool = False,
+        relufication_target_modules: List[str] = [],
+        relufication_mode: str = "hard",
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
+        # KD logic
+        if kd_loss_weight:
+            assert teacher is not None, "Teacher model must be provided for KD loss"
+            # Remove the gradient tracking for the teacher model
+            for param in teacher.parameters():
+                param.requires_grad = False
+            # Set the teacher model to evaluation mode
+            teacher.eval()
+        self.teacher = teacher
+        self.kd_loss_weight = kd_loss_weight
+        self.kd_temperature = kd_temperature
+
+        # Relufication logic
+        self.relufication = relufication
+        if relufication:
+            num_training_steps = (
+                math.floor(
+                    len(self.get_train_dataloader())
+                    * self.args.num_train_epochs
+                    / self.args.gradient_accumulation_steps
+                )
+                * self.args.gradient_accumulation_steps
+            )
+            self.relufied_activation_handles = apply_relufication(
+                model=self.model,
+                modules_to_relufy=relufication_target_modules,
+                relufication_mode=relufication_mode,
+                max_steps=num_training_steps,
+            )
+
+        # Sparsification and sparisty monitoring - hooks should be created after possible relufication
+        # Because they might be attached to activatons that would be otherwise replaced
         if (sparsity_loss_type.lower() == "none" or sparsity_loss_weight == 0) and len(
             modules_to_sparsify
         ) > 0:
@@ -64,17 +101,6 @@ class SparsityEnforcementTrainer(Trainer):
 
         self.eval_metrics: Dict[str, Dict[str, List[float]]] = {}
 
-        if kd_loss_weight:
-            assert teacher is not None, "Teacher model must be provided for KD loss"
-            # Remove the gradient tracking for the teacher model
-            for param in teacher.parameters():
-                param.requires_grad = False
-            # Set the teacher model to evaluation mode
-            teacher.eval()
-        self.teacher = teacher
-        self.kd_loss_weight = kd_loss_weight
-        self.kd_temperature = kd_temperature
-
     def _set_hooks_training_mode(self) -> None:
         # Set the hooks to training mode
         for sparsification_hook in self.sparsification_hooks:
@@ -88,7 +114,13 @@ class SparsityEnforcementTrainer(Trainer):
         for hook in self.sparsification_hooks:
             hook.set_attn_mask(inputs["attention_mask"])
 
-        return super().training_step(model, inputs, num_items_in_batch)
+        train_step_outputs = super().training_step(model, inputs, num_items_in_batch)
+
+        if self.relufication:
+            for relufied_activation in self.relufied_activation_handles:
+                relufied_activation.increment_step_ctr()
+
+        return train_step_outputs
 
     def _kld_loss(
         self,
@@ -118,8 +150,6 @@ class SparsityEnforcementTrainer(Trainer):
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
-        self.log_gpu_memory("Pre compute loss call")
-
         if return_outputs or self.teacher is not None:
             (ce_loss, outputs) = super().compute_loss(
                 model, inputs, True, num_items_in_batch
@@ -129,27 +159,33 @@ class SparsityEnforcementTrainer(Trainer):
                 model, inputs, return_outputs, num_items_in_batch
             )
 
-        training = any(h.active for h in self.sparsification_hooks)
+        loss = ce_loss
+
+        if self.model.training:
+            wandb_log_if_enabled(
+                {
+                    "train_ce_loss/total": ce_loss.item()
+                    * self.args.gradient_accumulation_steps
+                }
+            )
+
         # If any of the hooks are in training mode, also compute and log the sparsity loss
-        if training:
+        if len(self.sparsification_hooks) > 0 and any(
+            h.active for h in self.sparsification_hooks
+        ):
             sparsification_losses = [
                 hook.loss_val
                 for hook in self.sparsification_hooks
                 if hook.loss_val is not None
             ]
-            if len(sparsification_losses) == 0:
-                sparsification_loss = torch.zeros_like(ce_loss)
-                wandb_log_if_enabled({"train_ce_loss/total": ce_loss.item()})
-            else:
-                sparsification_loss = torch.mean(torch.stack(sparsification_losses))
-                # Multiply by gradient accumulation steps to match the loss logged by default in HF trainer
-                self._handle_train_sparsity_loss_metrics(
-                    ce_loss * self.args.gradient_accumulation_steps
-                )
+            assert (
+                len(sparsification_losses) > 0
+            ), "No sparsification losses found even though hooks are active."
+            sparsification_loss = torch.mean(torch.stack(sparsification_losses))
+            # Multiply by gradient accumulation steps to match the loss logged by default in HF trainer
+            self._handle_train_sparsity_loss_metrics()
 
-            loss = ce_loss + sparsification_loss
-        else:
-            loss = ce_loss
+            loss = loss + sparsification_loss
 
         # Compute the knowledge distillation loss if model in train mode and using a teacher model
         if self.model.training and self.teacher is not None and self.kd_loss_weight > 0:
@@ -157,13 +193,11 @@ class SparsityEnforcementTrainer(Trainer):
                 teacher_logits = self.teacher(**inputs).logits.detach()
             kld_loss = self._kld_loss(outputs.logits, teacher_logits, inputs["labels"])
             wandb_log_if_enabled({"train_kd_loss/total": kld_loss.item()})
-            loss += self.kd_loss_weight * kld_loss
-
-        self.log_gpu_memory("Post compute loss call")
+            loss = loss + self.kd_loss_weight * kld_loss
 
         return (loss, outputs) if return_outputs else loss
 
-    def _handle_train_sparsity_loss_metrics(self, ce_loss: torch.Tensor) -> None:
+    def _handle_train_sparsity_loss_metrics(self) -> None:
         # Log sparsity losses
         train_metrics = {}
         for hook in self.sparsification_hooks:
@@ -177,7 +211,6 @@ class SparsityEnforcementTrainer(Trainer):
                 [train_metrics[k] for k in train_metrics.keys() if k.startswith(key)]
             )
             train_metrics[f"{key}/avg"] = float(np.mean(key_vals))
-        train_metrics["train_ce_loss/total"] = ce_loss.item()
         wandb_log_if_enabled(train_metrics)
 
     @staticmethod

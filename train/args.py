@@ -105,6 +105,27 @@ class SparsityEnforcementArguments:
         ],
         metadata={"help": "Sparsity metrics to use for evaluation."},
     )
+    relufication: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to apply Relufication to the target sparsification modules."
+        },
+    )
+    relufication_target_modules: List[str] = field(
+        default_factory=lambda: ["mlp.act_fn"],
+        metadata={
+            "help": "The modules to to be replaced by ReLU if performing Reluficaiton."
+        },
+    )
+    relufication_mode: str = field(
+        default="hard",
+        metadata={
+            "help": "Whether to apply hard or soft Relufication. "
+            "Hard just replaces the activation with relu."
+            "Soft might apply additional logic to make the process easier for the model to adapt."
+        },
+    )
+
     kd_loss_weight: float = field(
         default=0.0,
         metadata={
