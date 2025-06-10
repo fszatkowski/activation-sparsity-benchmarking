@@ -17,7 +17,9 @@ class InputTokensHook:
 
     @torch.inference_mode()
     def __call__(self, module, input_tensor, output_tensor):
-        self.token_mask = input_tensor[0] != self.pad_token_id
+        if isinstance(input_tensor, tuple):
+            input_tensor = input_tensor[0]  # Handle tuple input for some models
+        self.token_mask = input_tensor != self.pad_token_id
 
 
 def get_topp_mask(
@@ -127,10 +129,21 @@ class SparsificationHook(ABC):
         self.total_counts = []
 
     def generic_call(self, value):
+        if isinstance(value, tuple):
+            value = value[
+                0
+            ]  # Handle tuple values in case model operates on multiple ins / outs
+        assert isinstance(value, torch.Tensor), "Value must be a torch.Tensor."
+
+        org_shape = value.shape
         input_mask = self.input_mask_hook.token_mask
         sparsified_value, num_sparse_neurons, num_all_neurons = sparsify_tensor(
             value, input_mask, rule=self.rule, th_val=self.th_val
         )
+        assert (
+            sparsified_value.shape == org_shape
+        ), "Sparsified value has different shape than the original."
+
         self.sparse_counts.extend(num_sparse_neurons)
         self.total_counts.extend(num_all_neurons)
         return sparsified_value
@@ -140,7 +153,7 @@ class SparsificationHook(ABC):
 class OutputSparsificationHook(SparsificationHook):
     @torch.inference_mode()
     def __call__(self, module, input_tensor, output_tensor):
-        value = output_tensor[0]
+        value = output_tensor
         return self.generic_call(value)
 
 
@@ -148,7 +161,7 @@ class OutputSparsificationHook(SparsificationHook):
 class InputSparsificationHook(SparsificationHook):
     @torch.inference_mode()
     def __call__(self, module, input_tensor):
-        value = input_tensor[0]
+        value = input_tensor
         return self.generic_call(value)
 
 
