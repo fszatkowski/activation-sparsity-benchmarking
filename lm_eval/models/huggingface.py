@@ -7,6 +7,8 @@ from typing import Dict, List, Literal, Optional, Tuple, Union
 import jinja2
 import torch
 import torch.nn.functional as F
+from lm_eval.activations_monitor import ActivationsMonitor
+from lm_eval.sparisfication_manager import SparsificationManager
 import transformers
 from accelerate import (
     Accelerator,
@@ -91,6 +93,8 @@ class HFLM(TemplateLM):
         autogptq: Optional[Union[bool, str]] = False,
         gptqmodel: Optional[bool] = False,
         gguf_file: Optional[str] = None,
+        sparsification_manager: Optional[SparsificationManager] = None,
+        activations_monitor: Optional[ActivationsMonitor] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -292,6 +296,14 @@ class HFLM(TemplateLM):
                 f"Loglikelihood prefix token id used in evaluation: {self.prefix_token_id}"
             )
 
+        self.sparsification_manager = sparsification_manager
+        self.activations_monitor = activations_monitor
+        if self.sparsification_manager is not None:
+            self.sparsification_manager.initialize(self)
+        if self.activations_monitor is not None:
+            self.activations_monitor.initialize(self)
+
+
     def _get_accelerate_args(
         self,
         parallelize: Optional[bool] = None,
@@ -423,7 +435,7 @@ class HFLM(TemplateLM):
 
     @property
     def max_gen_toks(self) -> int:
-        return 256
+        return 50
 
     @property
     def batch_size(self):
@@ -726,6 +738,12 @@ class HFLM(TemplateLM):
         return None
 
     def _detect_batch_size(self, requests=None, pos: int = 0):
+        # Disable any hooks during batch size detection
+        if self.sparsification_manager is not None:
+            self.sparsification_manager.disable()
+        if self.activations_monitor is not None:
+            self.activations_monitor.disable()
+
         if requests:
             _, context_enc, continuation_enc = requests[pos]
             max_length = len(
@@ -768,6 +786,12 @@ class HFLM(TemplateLM):
                 batch_size = 1
             else:
                 raise
+
+        # Enable hooks after batch size detection finishes
+        if self.sparsification_manager is not None:
+            self.sparsification_manager.enable()
+        if self.activations_monitor is not None:
+            self.activations_monitor.enable()
 
         if self.world_size > 1:
             # if multi-GPU, always take minimum over all selected batch sizes
@@ -1086,6 +1110,7 @@ class HFLM(TemplateLM):
             disable=(disable_tqdm or (self.rank != 0)),
             desc="Running loglikelihood requests",
         )
+
         for chunk in chunks:
             inps = []
             cont_toks_list = []
@@ -1099,7 +1124,7 @@ class HFLM(TemplateLM):
             # because vectorizing is annoying, we first convert each (context, continuation) pair to padded
             # tensors, then we pack them together into a batch, call the model, and then pick it all apart
             # again because vectorizing is annoying
-
+            
             for _, context_enc, continuation_enc in chunk:
                 # sanity check
                 assert len(context_enc) > 0

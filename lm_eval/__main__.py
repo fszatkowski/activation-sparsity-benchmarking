@@ -10,7 +10,8 @@ from typing import Union
 from lm_eval import evaluator, utils
 from lm_eval.evaluator import request_caching_arg_to_dict
 from lm_eval.loggers import EvaluationTracker, WandbLogger
-from lm_eval.sparsity_monitor import SparsityMonitor
+from lm_eval.sparisfication_manager import SparsificationManager
+from lm_eval.activations_monitor import ActivationsMonitor
 from lm_eval.tasks import TaskManager
 from lm_eval.utils import handle_non_serializable, make_table, simple_parse_args_string
 
@@ -278,6 +279,12 @@ def setup_parser() -> argparse.ArgumentParser:
         type=str,
         help="Algorithm to use to select zeroed-out subset during the parsification.",
     )
+    parser.add_argument(
+        "--activations_monitor_config",
+        default=None,
+        type=str,
+        help="Path to the config file that specifies the layers for sparsity monitoring during inference",
+    )
     return parser
 
 
@@ -401,14 +408,22 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     )
 
     if args.sparsification_config is not None:
-        sparsity_monitor = SparsityMonitor(
+        sparsification_manager = SparsificationManager(
             args.sparsification_config,
             output_dir=args.output_path,
             sparsification_rule=args.sparsification_rule,
             th_val=args.sparsification_th_val,
         )
     else:
-        sparsity_monitor = None
+        sparsification_manager = None
+
+    if args.activations_monitor_config is not None:
+        activations_monitor = ActivationsMonitor(
+            args.activations_monitor_config,
+            output_dir=args.output_path,
+        )
+    else:
+        activations_monitor = None
 
     results = evaluator.simple_evaluate(
         model=args.model,
@@ -435,7 +450,8 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         numpy_random_seed=args.seed[1],
         torch_random_seed=args.seed[2],
         fewshot_random_seed=args.seed[3],
-        sparsity_monitor=sparsity_monitor,
+        sparsification_manager=sparsification_manager,
+        activations_monitor=activations_monitor,
         **request_caching_args,
     )
 

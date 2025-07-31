@@ -13,7 +13,6 @@ def preprocess(text):
 
 def process_docs(dataset: datasets.Dataset) -> datasets.Dataset:
     def _process_doc(doc):
-        # breakpoint()
         out_doc = {
             "id": doc["id"],
             "query": "Question: " + preprocess(doc["instruction"]) + "\nAnswer:",

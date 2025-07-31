@@ -27,25 +27,81 @@ def get_topp_mask(
 ) -> torch.Tensor:
     non_padded_activations = (input_mask.unsqueeze(-1).float() * tensor).abs()
 
+    # Sort the activation values, the biggest activations appear first
     sorted_activations, _ = non_padded_activations.sort(descending=True, dim=-1)
 
-    # Use more precise dtype for the cumsum
+    # Calculate the cumsum - the total sum of activations up to this position
+    # dtype is float64 to avoid overflow
     activation_cumsum = sorted_activations.cumsum(
         dim=-1, dtype=torch.float64
     )  # shape: [batch_size, seq_len, hidden_dim]
+    # Sum of all activations is the last element of the cumsum
     activation_sums = activation_cumsum[:, :, -1].unsqueeze(
         -1
-    )  # shape: [batch_size, seq_len]
+    )  # shape: [batch_size, seq_len, 1]
 
     # Find which activations to use to maintain at least topp percent of the total activation sum
-    cumsum_threshold_idx = (activation_cumsum < activation_sums * topp_val).sum(
-        -1
-    )  # shape: [batch_size, seq_len]
+    target_sum = activation_sums * topp_val
+    exceeds_target = activation_cumsum >= target_sum
+
+    # Get the first index where we exceed the target (or last index if none)
+    cumsum_threshold_idx = exceeds_target.int().argmax(dim=-1)
+
+    # Handle edge case where no position exceeds target (shouldn't happen with valid inputs)
+    # In this case, set to all zeros
+    no_exceeds = ~exceeds_target.any(dim=-1)
+    cumsum_threshold_idx = torch.where(
+        no_exceeds, torch.zeros_like(cumsum_threshold_idx), cumsum_threshold_idx
+    )
+
     # Get the minimum activation threshold
     activation_threshold_value = sorted_activations.gather(
         -1, cumsum_threshold_idx.unsqueeze(-1)
     ).type(tensor.dtype)
     non_sparse_mask = non_padded_activations >= activation_threshold_value
+
+    return non_sparse_mask
+
+
+def get_topp2_mask(
+    tensor: torch.Tensor, topp_val: float, input_mask: torch.Tensor
+) -> torch.Tensor:
+    non_padded_activations = (input_mask.unsqueeze(-1).float() * tensor).abs() ** 2
+
+    # Sort the activation values, the biggest activations appear first
+    sorted_activations, _ = non_padded_activations.sort(descending=True, dim=-1)
+    sorted_activations = sorted_activations
+
+    # Calculate the cumsum - the total sum of activations up to this position
+    # dtype is float64 to avoid overflow
+    activation_cumsum = sorted_activations.cumsum(
+        dim=-1, dtype=torch.float64
+    )  # shape: [batch_size, seq_len, hidden_dim]
+    # Sum of all activations is the last element of the cumsum
+    activation_sums = activation_cumsum[:, :, -1].unsqueeze(
+        -1
+    )  # shape: [batch_size, seq_len, 1]
+
+    # Find which activations to use to maintain at least topp percent of the total activation sum
+    target_sum = activation_sums * topp_val
+    exceeds_target = activation_cumsum >= target_sum
+
+    # Get the first index where we exceed the target (or last index if none)
+    cumsum_threshold_idx = exceeds_target.int().argmax(dim=-1)
+
+    # Handle edge case where no position exceeds target (shouldn't happen with valid inputs)
+    # In this case, set to all zeros
+    no_exceeds = ~exceeds_target.any(dim=-1)
+    cumsum_threshold_idx = torch.where(
+        no_exceeds, torch.zeros_like(cumsum_threshold_idx), cumsum_threshold_idx
+    )
+
+    # Get the minimum activation threshold
+    activation_threshold_value = sorted_activations.gather(
+        -1, cumsum_threshold_idx.unsqueeze(-1)
+    ).type(tensor.dtype)
+    non_sparse_mask = non_padded_activations >= activation_threshold_value
+
     return non_sparse_mask
 
 
@@ -87,11 +143,6 @@ def sparsify_tensor(
     rule: str,
     th_val: Optional[float] = None,
 ) -> Tuple[torch.Tensor, List[int], List[int]]:
-    # If all activations are the same, this means the evaluation engine runs the initial batch size calibration
-
-    if torch.all(tensor[0, 0] == tensor):
-        return tensor, [], []
-
     if rule == "topp":
         assert th_val is not None, "Topp value must be provided for topp rule"
         non_sparse_mask = get_topp_mask(tensor, th_val, input_mask)
@@ -125,10 +176,21 @@ class SparsificationHook(ABC):
         self.rule = rule
         self.th_val = th_val
 
+        self.enabled = True
+
         self.sparse_counts = []
         self.total_counts = []
 
+    def enable(self):
+        self.enabled = True
+
+    def disable(self):
+        self.enabled = False
+
     def generic_call(self, value):
+        if not self.enabled:
+            return value
+
         if isinstance(value, tuple):
             value = value[
                 0
@@ -165,7 +227,7 @@ class InputSparsificationHook(SparsificationHook):
         return self.generic_call(value)
 
 
-class SparsityMonitor:
+class SparsificationManager:
     def __init__(
         self,
         sparsification_config_path: str,
@@ -177,7 +239,7 @@ class SparsityMonitor:
         assert (
             th_val is not None
         ), "Threshold value must be provided for sparsified infreence."
-        assert th_val > 0, "Threshold value must be greater than 0."
+        assert th_val >= 0, "Threshold value must be greater than or equal to 0."
         assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val
 
@@ -188,22 +250,33 @@ class SparsityMonitor:
                 "layers_to_sparsify", None
             )
             self.layer_hook_modes = sparsity_config.get("hook_mode", None)
+            self.embedding_layer_name = sparsity_config.get(
+                "embedding_layer_name", None
+            )
 
         self.output_dir = Path(output_dir)
-        self.monitor_hooks = []
         self.sparsity_hooks = []
+
+    def enable(self):
+        for hook in self.sparsity_hooks:
+            hook.enable()
+
+    def disable(self):
+        for hook in self.sparsity_hooks:
+            hook.disable()
 
     def initialize(self, lm):
         assert self.layer_names_to_sparsify is not None
 
-        input_hook = InputTokensHook(lm.tokenizer.pad_token_type_id)
-        embedding_layer = lm.model.get_submodule("model.embed_tokens")
+        input_hook = InputTokensHook(lm.tokenizer.pad_token_id)
+        embedding_layer = lm.model.get_submodule(self.embedding_layer_name)
         embedding_layer.register_forward_hook(input_hook)
 
         modules_to_hook = [
             lm.model.get_submodule(eval_layer_name)
             for eval_layer_name in self.layer_names_to_sparsify
         ]
+
         for layer_name, hook_module, hook_mode in zip(
             self.layer_names_to_sparsify, modules_to_hook, self.layer_hook_modes
         ):
