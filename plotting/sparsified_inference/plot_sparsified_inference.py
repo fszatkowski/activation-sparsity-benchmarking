@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -7,17 +8,27 @@ import seaborn as sns
 from plotting.harness_parsing import read_sparsified_harness_results
 
 model_dict = {
-    "llama3-1b": "Llama3.1-1B",
+    "llama3-1b": "Llama3.2-1B",
+    "llama3-1b-instruct": "Llama3.2-1B-Instruct",
+    "llama3-3b": "Llama3.2-3B",
+    "llama3-3b-instruct": "Llama3.2-3B-Instruct",
     "gemma2-2b": "Gemma2-2B",
     "qwen2_5-1_5b": "Qwen2.5-1.5B",
 }
 fontsize = 16
 fontsize_ticks = 12
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results_dir", type=str, required=True)
+    return parser.parse_args()
+
 if __name__ == "__main__":
+    args = parse_args()
+
     root = Path(__file__).parent.parent.parent
 
-    results_dir = root / "sparsified_evaluation"
+    results_dir = root / args.results_dir
     assert results_dir.exists(), f"Results directory {results_dir} does not exist."
 
     all_data = []

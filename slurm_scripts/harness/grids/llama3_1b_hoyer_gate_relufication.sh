@@ -3,10 +3,13 @@
 slurm_log_dir=slurm_logs/
 eval_root_dir=sparsified_evaluation_hoyer/
 model_setups=(
-    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-hard-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/hard lm_eval/sparsification_configs/llama3-1b_gate.json"
-    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-soft-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/soft lm_eval/sparsification_configs/llama3-1b_gate.json"
-    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-soft_cosine-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/soft_cosine lm_eval/sparsification_configs/llama3-1b_gate.json"
-    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-soft_inverse_cosine-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/soft_inverse_cosine lm_eval/sparsification_configs/llama3-1b_gate.json"
+    # "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-hard-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/hard lm_eval/sparsification_configs/llama3-1b_gate.json"
+    # "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-soft-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/soft lm_eval/sparsification_configs/llama3-1b_gate.json"
+    # "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-soft_cosine-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/soft_cosine lm_eval/sparsification_configs/llama3-1b_gate.json"
+    # "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-soft_inverse_cosine-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/soft_inverse_cosine lm_eval/sparsification_configs/llama3-1b_gate.json"
+    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-hard-eighth-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/hard_eighth lm_eval/sparsification_configs/llama3-1b_gate.json"
+    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-hard-quarter-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/hard_quarter lm_eval/sparsification_configs/llama3-1b_gate.json"
+    "output_models/FineWeb/Llama-3.2-1B-gate-relufication/s350000-hard-half-bs-128-lr-5e-6 llama3-1b-hoyer-gate-relufication/hard_half lm_eval/sparsification_configs/llama3-1b_gate.json"
 )
 sparsity_setups=(
     "topp 1.0"

@@ -18,7 +18,8 @@ conda activate asb
 lr=$1
 num_samples=$2
 gradient_accumulation_steps=$3
-output_dir=$4
+relufication_mode=$4
+output_dir=$5
 
 num_epochs=1
 batch_size=2 # Max batch size for Athena jobs
@@ -29,7 +30,7 @@ actual_batch_size=$((batch_size*gradient_accumulation_steps))
 python train/main.py \
     --model_name meta-llama/Llama-3.2-1B \
     --output_dir ${output_dir} \
-    --run_name llama3-1b-fineweb-s${num_samples}-baseline-nepochs-${num_epochs}-bs-${actual_batch_size}-lr-${lr} \
+    --run_name llama3-1b-fineweb-s${num_samples}-gate-relufication-${relufication_mode}-nepochs-${num_epochs}-bs-${actual_batch_size}-lr-${lr} \
     --attn_implementation flash_attention_2 \
     --bf16 True \
     --dataset_name HuggingFaceFW/fineweb \
@@ -48,6 +49,15 @@ python train/main.py \
     --lr_scheduler_type cosine \
     --warmup_steps 500 \
     --weight_decay 0.01 \
+    --loss_type none \
+    --loss_weight 0.0 \
+    --modules_to_sparsify [] \
+    --sparsification_modes [] \
+    --modules_to_monitor mlp mlp.down_proj mlp.act_fn \
+    --relufication True \
+    --relufication_mode ${relufication_mode} \
+    --relufication_target_modules layers.7.mlp.act_fn layers.8.mlp.act_fn \
+    --monitor_modes input input output \
     --eval_strategy steps \
     --eval_steps 0.05 \
     --save_strategy no \
@@ -55,4 +65,4 @@ python train/main.py \
     --logging_strategy steps \
     --logging_steps 1 \
     --report_to wandb \
-    --wandb_tags fineweb-s${num_samples}
+    --wandb_tags fineweb-s${num_samples}-gate-relufication-${relufication_mode}
