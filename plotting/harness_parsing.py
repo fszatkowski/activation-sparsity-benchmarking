@@ -109,11 +109,19 @@ def _read_sparsified_harness_result(result_path: Path) -> Dict:
 
     parent_file = result_path.parent
     eval_scores = list(parent_file.glob("*/*.json"))
-    assert (
-        len(eval_scores) == 1
-    ), f"Expected one eval score file, found {len(eval_scores)}"
 
-    with eval_scores[0].open("r") as f:
+    if len(eval_scores) == 1:
+        scores_file = eval_scores[0]
+    elif len(eval_scores) == 0:
+        raise FileNotFoundError(
+            f"No evaluation score files found in {parent_file}. Expected one file."
+        )
+    else:
+        # If multiple files match, load the newest one
+        print(f"Multiple evaluation score files found in {parent_file}. Using the newest one.")
+        scores_file = max(eval_scores, key=lambda x: x.stat().st_mtime)
+
+    with scores_file.open("r") as f:
         eval_results = json.load(f)["results"]
 
     results = _extract_metrics(eval_results)
@@ -125,8 +133,9 @@ def _read_sparsified_harness_result(result_path: Path) -> Dict:
 
 
 def read_sparsified_harness_results(
-    sparsity_stat_files: List[Path], add_average: bool = True
+    sparsity_stat_files: List[Path], add_average: bool = True, filter_tasks: List[str] = None
 ) -> pd.DataFrame:
+    # TODO add smoothing options!
     sparsity_results = []
     for s in sparsity_stat_files:
         try:
@@ -134,6 +143,9 @@ def read_sparsified_harness_results(
         except Exception as e:
             print(f"Error processing {s}: {e}")
     df = pd.DataFrame(sparsity_results)
+
+    if filter_tasks is not None:
+        df = df[df["task"].isin(filter_tasks)]
 
     if add_average:
         # Add "average" task that averages sparsity and acc across all tasks for given rule and threshold
@@ -145,21 +157,21 @@ def read_sparsified_harness_results(
         avg_df["task"] = "average"
         df = pd.concat([df, avg_df], ignore_index=True)
 
-        avg_likelihood = (
-            df[df["task"].isin(likelihood_tasks)]
-            .groupby(["sparsification_rule", "threshold"])
-            .agg(sparsity=("sparsity", "mean"), acc=("acc", "mean"))
-            .reset_index()
-        )
-        avg_likelihood["task"] = "average_likelihood"
-        avg_generative = (
-            df[df["task"].isin(generative_tasks)]
-            .groupby(["sparsification_rule", "threshold"])
-            .agg(sparsity=("sparsity", "mean"), acc=("acc", "mean"))
-            .reset_index()
-        )
-        avg_generative["task"] = "average_generative"
-        df = pd.concat([df, avg_likelihood, avg_generative], ignore_index=True)
+        # avg_likelihood = (
+        #     df[df["task"].isin(likelihood_tasks)]
+        #     .groupby(["sparsification_rule", "threshold"])
+        #     .agg(sparsity=("sparsity", "mean"), acc=("acc", "mean"))
+        #     .reset_index()
+        # )
+        # avg_likelihood["task"] = "average_likelihood"
+        # avg_generative = (
+        #     df[df["task"].isin(generative_tasks)]
+        #     .groupby(["sparsification_rule", "threshold"])
+        #     .agg(sparsity=("sparsity", "mean"), acc=("acc", "mean"))
+        #     .reset_index()
+        # )
+        # avg_generative["task"] = "average_generative"
+        # df = pd.concat([df, avg_likelihood, avg_generative], ignore_index=True)
 
     df = df.sort_values(by=["task", "sparsification_rule", "threshold"])
     return df

@@ -29,3 +29,5 @@ examples/wandb
 output*/
 .DS_Store
 debug*
+plotting
+plotting/*
