@@ -1,0 +1,11 @@
+{
+    "embedding_layer_name": "model.embed_tokens",
+    "layers_to_sparsify": [
+        "model.layers.8.mlp",
+        "model.layers.8.mlp.down_proj"
+    ],
+    "hook_mode": [
+        "input",
+        "input"
+    ]
+}

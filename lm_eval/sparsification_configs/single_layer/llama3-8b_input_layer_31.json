@@ -1,0 +1,9 @@
+{
+    "embedding_layer_name": "model.embed_tokens",
+    "layers_to_sparsify": [
+        "model.layers.31.mlp"
+    ],
+    "hook_mode": [
+        "input"
+    ]
+}

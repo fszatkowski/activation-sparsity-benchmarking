@@ -82,38 +82,22 @@ if __name__ == "__main__":
     root = Path(__file__).parent
 
     models_n_layers_embedding_names = [
-        # ("gemma3-1b", 26, "model.embed_tokens"),
-        # ("gemma3-4b", 34, "language_model.embed_tokens"),
-        # ("gemma3-12b", 48, "language_model.embed_tokens"),
-        # ("gemma3-27b", 62, "language_model.embed_tokens"),
-        # ("llama3-1b", 16, "model.embed_tokens"),
-        # ("llama3-3b", 28, "model.embed_tokens"),
         # ("llama3-8b", 32, "model.embed_tokens"),
-        # ("llama3-70b", 80, "model.embed_tokens"),
-        # ("qwen2_5-0_5b", 24, "model.embed_tokens"),
-        # ("qwen2_5-1_5b", 28, "model.embed_tokens"),
-        # ("qwen2_5-3b", 36, "model.embed_tokens"),
-        # ("qwen2_5-7b", 28, "model.embed_tokens"),
-        # ("qwen2_5-14b", 48, "model.embed_tokens"),
-        # ("qwen2_5-32b", 64, "model.embed_tokens"),
-        # ("qwen2_5-72b", 80, "model.embed_tokens"),
-        ("qwen3-4b", 36, "model.embed_tokens"),
+        ("qwen2_5-7b", 28, "model.embed_tokens"),
     ]
 
     for model_name, n_layers, embedding_name in models_n_layers_embedding_names:
         for module_type in ["input", "intermediate", "gate", "up_proj", "all_inputs"]:
-            layer_names, hook_modes = [], []
             for layer_idx in range(n_layers):
                 module_names, hook_types = get_model_layer_config(
                     model_name, module_type, layer_idx
                 )
-                layer_names.extend(module_names)
-                hook_modes.extend(hook_types)
-            config = {
-                "embedding_layer_name": embedding_name,
-                "layers_to_sparsify": layer_names,
-                "hook_mode": hook_modes,
-            }
-            config_path = root / f"{model_name}_{module_type}.json"
-            with config_path.open("w+") as f:
-                json.dump(config, f, indent=4)
+                config = {
+                    "embedding_layer_name": embedding_name,
+                    "layers_to_sparsify": module_names,
+                    "hook_mode": hook_types,
+                }
+                config_path = root / 'single_layer' / f"{model_name}_{module_type}_layer_{layer_idx}.json"
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                with config_path.open("w+") as f:
+                    json.dump(config, f, indent=4)

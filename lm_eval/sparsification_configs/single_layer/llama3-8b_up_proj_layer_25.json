@@ -1,0 +1,9 @@
+{
+    "embedding_layer_name": "model.embed_tokens",
+    "layers_to_sparsify": [
+        "model.layers.25.mlp.up_proj"
+    ],
+    "hook_mode": [
+        "output"
+    ]
+}
