@@ -26,7 +26,7 @@ from lm_eval.evaluator_utils import (
 )
 from lm_eval.loggers import EvaluationTracker
 from lm_eval.loggers.utils import add_env_info, add_tokenizer_info, get_git_commit_hash
-from lm_eval.sparisfication_manager import SparsificationManager
+from lm_eval.sparsification_manager import SparsificationManager
 from lm_eval.activations_monitor import ActivationsMonitor
 from lm_eval.tasks import (
     TaskManager,

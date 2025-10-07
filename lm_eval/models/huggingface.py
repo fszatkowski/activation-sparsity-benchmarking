@@ -8,7 +8,7 @@ import jinja2
 import torch
 import torch.nn.functional as F
 from lm_eval.activations_monitor import ActivationsMonitor
-from lm_eval.sparisfication_manager import SparsificationManager
+from lm_eval.sparsification_manager import SparsificationManager
 import transformers
 from accelerate import (
     Accelerator,
@@ -435,7 +435,7 @@ class HFLM(TemplateLM):
 
     @property
     def max_gen_toks(self) -> int:
-        return 50
+        return 4096
 
     @property
     def batch_size(self):
@@ -737,24 +737,26 @@ class HFLM(TemplateLM):
             )
         return None
 
-    def _detect_batch_size(self, requests=None, pos: int = 0):
-        # Disable any hooks during batch size detection
-        if self.sparsification_manager is not None:
-            self.sparsification_manager.disable()
-        if self.activations_monitor is not None:
-            self.activations_monitor.disable()
-
-        if requests:
+    def _detect_batch_size(self, requests=None, pos: int = 0, max_req_len: int = None):
+        if requests is not None:
             _, context_enc, continuation_enc = requests[pos]
             max_length = len(
                 (context_enc + continuation_enc)[-(self.max_length + 1) :][:-1]
             )
             max_context_enc = len(context_enc[-(self.max_length + 1) :])
             max_cont_enc = len(continuation_enc[-(self.max_length + 1) :])
+        elif max_req_len is not None:
+            max_length = max_req_len
+            max_context_enc = max_length
+            max_cont_enc = max_length
         else:
             max_length = self.max_length
             max_context_enc = max_length
             max_cont_enc = max_length
+
+        # Add 10% to max_length to avoid edge cases where the batch size detection fails
+        # Since it does not account for some overhead from hooks
+        max_length = int(max_length * 1.1)
 
         # if OOM, then halves batch_size and tries again
         @find_executable_batch_size(starting_batch_size=self.max_batch_size)
@@ -771,9 +773,8 @@ class HFLM(TemplateLM):
                 }
             else:
                 call_kwargs = {}
-                test_batch = torch.ones(
-                    (batch_size, max_length), device=self.device
-                ).long()
+                # Use random tokens to avoid sorting and other ops in hooks having it too easily
+                test_batch = torch.randint(low=0, high=self.tokenizer.vocab_size, size=(batch_size, max_length), device=self.device)
             for _ in range(5):
                 out = F.log_softmax(self._model_call(test_batch, **call_kwargs), dim=-1)  # noqa: F841
 
@@ -787,11 +788,9 @@ class HFLM(TemplateLM):
             else:
                 raise
 
-        # Enable hooks after batch size detection finishes
+        # Restart the manager after batch size detection finishe to avoid storing the data from batch size estimation
         if self.sparsification_manager is not None:
-            self.sparsification_manager.enable()
-        if self.activations_monitor is not None:
-            self.activations_monitor.enable()
+            self.sparsification_manager.restart()
 
         if self.world_size > 1:
             # if multi-GPU, always take minimum over all selected batch sizes
@@ -916,6 +915,12 @@ class HFLM(TemplateLM):
         stopping_criteria = stop_sequences_criteria(
             self.tokenizer, stop, context.shape[1], context.shape[0]
         )
+
+        # --- modified code ---
+        # set the max length of the generation in the model to the determined max length to make sure the model does not generate more tokens than needed
+        self.model.generation_config.max_new_tokens = self.max_gen_toks
+        # --- modified code ends ---
+
         return self.model.generate(
             input_ids=context,
             max_length=max_length,
@@ -1217,6 +1222,15 @@ class HFLM(TemplateLM):
                 self._model_call(batched_inps, **call_kwargs), dim=-1
             )  # [batch, padding_length (inp or cont), vocab]
 
+            if self.sparsification_manager is not None:
+                batch_seq_len = batched_inps.shape[1]
+                attn_mask = (batched_inps == self.tokenizer.pad_token_id)
+
+                batch_start_indices = [0] * batched_inps.shape[0]
+                batch_end_indices = (batch_seq_len - attn_mask.sum(-1)).tolist()
+
+                self.sparsification_manager.consolidate_batch(batch_start_indices=batch_start_indices, batch_end_indices=batch_end_indices)
+
             for (request_str, ctx_tokens, _), logits, inplen, cont_toks in zip(
                 chunk, multi_logits, inplens, cont_toks_list
             ):
@@ -1298,13 +1312,43 @@ class HFLM(TemplateLM):
             disable=(disable_tqdm or (self.rank != 0)),
             desc="Running generate_until requests",
         )
+
+        # --- modified code ---
+        # changed this code to allow for more efficient auto batching - otherwise the code would use very high max length for auto batch determination
+
+        # The code assumes that the model is causal decoder-only
+        assert self.backend == "causal"
+
+        # we group requests by their generation_kwargs,
+        # so that we don't try to execute e.g. greedy sampling and temp=0.8 sampling
+        # in the same batch.
+        # group_fn=lambda x: x[1] -> x=(context, gen_kwargs)
+        re_ords = Collator(
+            [reg.args for reg in requests],
+            sort_fn=_collate,
+            group_by="gen_kwargs",
+            group_fn=lambda x: x[1],
+        )
+
+        # This is a rough estimate of the max length of the generation in the model
+        tmp_chunks = re_ords.get_batched(n=1, batch_fn=None)
+        longest_question = next(iter(tmp_chunks))[0][0]
+        max_gen_toks = self.max_gen_toks
+        max_ctx_len = self.max_length - max_gen_toks
+
+        context_enc, _ = self.tok_batch_encode(longest_question, left_truncate_len=max_ctx_len, truncation=self.truncation)
+        max_req_len = context_enc.shape[1] + max_gen_toks
+
         adaptive_batch_size = None
         if self.batch_size == "auto":
             # using rolling window with maximum context
             print("Passed argument batch_size = auto. Detecting largest batch size")
-            batch_size = self._detect_batch_size()
+            batch_size = self._detect_batch_size(max_req_len=max_req_len)
             print(f"Determined Largest batch size: {batch_size}")
             adaptive_batch_size = batch_size
+
+        # --- modified code ends ---
+
         # for each different set of kwargs, we execute all requests, by batch.
         batch_size = (
             self.batch_size
@@ -1318,24 +1362,16 @@ class HFLM(TemplateLM):
             if self.batch_size == "auto" and not adaptive_batch_size
             else None
         )
-
-        # we group requests by their generation_kwargs,
-        # so that we don't try to execute e.g. greedy sampling and temp=0.8 sampling
-        # in the same batch.
-        # group_fn=lambda x: x[1] -> x=(context, gen_kwargs)
-        re_ords = Collator(
-            [reg.args for reg in requests],
-            sort_fn=_collate,
-            group_by="gen_kwargs",
-            group_fn=lambda x: x[1],
-        )
         chunks = re_ords.get_batched(n=batch_size, batch_fn=batch_fn)
+
         eos = self.tok_decode(self.eot_token_id, skip_special_tokens=False)
         for chunk in chunks:
             contexts, all_gen_kwargs = zip(*chunk)
+
             # we assume all gen kwargs in the batch are the same
             # this is safe to assume because the `grouper` object ensures it.
             gen_kwargs = all_gen_kwargs[0]
+            
             # unpack our keyword arguments.
             if isinstance(gen_kwargs, dict):
                 kwargs = copy.deepcopy(gen_kwargs)  # edge case for repeats > 1
@@ -1345,10 +1381,8 @@ class HFLM(TemplateLM):
                 raise ValueError(
                     f"Expected `kwargs` to be of type `dict` but got {type(gen_kwargs)}"
                 )
-            if "max_gen_toks" in kwargs.keys():
-                max_gen_toks = kwargs.pop("max_gen_toks")
-            else:
-                max_gen_toks = self.max_gen_toks
+
+            max_gen_toks = self.max_gen_toks
 
             # set the max length in tokens of inputs ("context_enc")
             if self.backend == "causal":
@@ -1382,6 +1416,8 @@ class HFLM(TemplateLM):
             )
 
             cont_toks_list = cont.tolist()
+            num_generated_tokens = []
+
             for cont_toks, context in zip(cont_toks_list, contexts):
                 # discard context + left-padding toks if using causal decoder-only LM
                 if self.backend == "causal":
@@ -1398,11 +1434,25 @@ class HFLM(TemplateLM):
 
                 res.append(s)
 
+                # Store information about the number of generated tokens
+                until_token_ids = self.tokenizer.convert_tokens_to_ids(until)
+                is_eos = [any(t == eos_id for eos_id in until_token_ids) for t in cont_toks]
+                if not any(is_eos):
+                    num_generated_tokens.append(len(cont_toks))
+                else:
+                    num_generated_tokens.append(is_eos.index(True)+1)
+
                 self.cache_hook.add_partial("generate_until", (context, gen_kwargs), s)
                 pbar.update(1)
+            
+            if self.sparsification_manager is not None:
+                batch_start_indices = (attn_masks == 0 ).sum(-1).tolist()
+                batch_end_indices = [context_enc.shape[1] + g for g in num_generated_tokens]
+                self.sparsification_manager.consolidate_batch(batch_start_indices=batch_start_indices, batch_end_indices=batch_end_indices, num_generated_tokens=num_generated_tokens)
+
         # reorder this group of results back to original unsorted form
         res = re_ords.get_original(res)
-
+        
         pbar.close()
 
         return res

@@ -4,13 +4,12 @@ import logging
 import os
 import sys
 from functools import partial
-from pathlib import Path
 from typing import Union
 
 from lm_eval import evaluator, utils
 from lm_eval.evaluator import request_caching_arg_to_dict
 from lm_eval.loggers import EvaluationTracker, WandbLogger
-from lm_eval.sparisfication_manager import SparsificationManager
+from lm_eval.sparsification_manager import SparsificationManager
 from lm_eval.activations_monitor import ActivationsMonitor
 from lm_eval.tasks import TaskManager
 from lm_eval.utils import handle_non_serializable, make_table, simple_parse_args_string
@@ -285,6 +284,18 @@ def setup_parser() -> argparse.ArgumentParser:
         type=str,
         help="Path to the config file that specifies the layers for sparsity monitoring during inference",
     )
+    parser.add_argument(
+        "--activations_monitor_granularity",
+        default=0.05,
+        type=float,
+        help="Granularity for the activations bin computation.",
+    )
+    parser.add_argument(
+        '--compute_effective_rank',
+        action='store_true',
+        default=False,
+        help='Compute the effective rank of the activations',
+    )
     return parser
 
 
@@ -413,6 +424,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             output_dir=args.output_path,
             sparsification_rule=args.sparsification_rule,
             th_val=args.sparsification_th_val,
+            compute_effective_rank=args.compute_effective_rank,
         )
     else:
         sparsification_manager = None
@@ -421,6 +433,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         activations_monitor = ActivationsMonitor(
             args.activations_monitor_config,
             output_dir=args.output_path,
+            granularity=args.activations_monitor_granularity,
         )
     else:
         activations_monitor = None

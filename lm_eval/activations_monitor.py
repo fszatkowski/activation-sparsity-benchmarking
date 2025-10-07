@@ -1,6 +1,7 @@
 import json
 from abc import ABC
 from pathlib import Path
+from typing import Counter, Dict, List
 
 import torch
 
@@ -21,6 +22,32 @@ class InputTokensHook:
         self.token_mask = input_tensor != self.pad_token_id
 
 
+def compute_tensor_stats(
+    tensor: torch.Tensor, input_mask: torch.Tensor, granularity: float
+) -> List[List[Dict[int, int]]]:
+    # For [B, S, H] tensor, compute the activation stats for each token
+    # Encode each tensor into dict which contains the activations stacked into buckets
+    # Dict contains the bucket index, where the index of i means that the activation is between i * granularity and (i + 1) * granularity
+    batch_size, seq_len, _ = tensor.shape
+    bucket_indices = torch.floor(tensor / granularity).long()
+
+    # For each bucket, transform to dict containing indices and number of counts
+    # Store output as list of each element in the batch, where each element is a list of dicts
+    batch_data = []
+    for seq_idx in range(batch_size):
+        seq_data = []
+        for token_idx in range(seq_len):
+            # If the token is masked out, skip
+            if not input_mask[seq_idx, token_idx]:
+                continue
+
+            # Convert the bucket to python dict of counts
+            token_bucket_indices = bucket_indices[seq_idx, token_idx]
+            token_bucket_counts = Counter(token_bucket_indices.tolist())
+            seq_data.append(token_bucket_counts)
+        batch_data.append(seq_data)
+    return batch_data
+
 
 class ActivationsHook(ABC):
     def __init__(
@@ -28,47 +55,39 @@ class ActivationsHook(ABC):
         layer_name: str,
         input_mask_hook: InputTokensHook,
         output_dir: Path,
+        granularity: float = 0.05,
     ):
         self.layer_name = layer_name
         self.input_mask_hook = input_mask_hook
+        self.granularity = granularity
 
-        # Create a directory for to save the hooks activations
-        self.output_file = output_dir / layer_name
-        self.output_file.mkdir(parents=True, exist_ok=True)
-        self.batch_idx = 0
+        # Create the file where the activation data will be stored
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_file = output_dir / f"{layer_name.replace('.', '_')}.jsonl"
 
-        self.enabled = True
-
-    def enable(self):
-        self.enabled = True
-    
-    def disable(self):
-        self.enabled = False
-
-    def generic_call(self, value):
-        if not self.enabled:
-            return value
-        
+    def generic_call(self, value, eps=1e-5):
         if isinstance(value, tuple):
             value = value[
                 0
             ]  # Handle tuple values in case model operates on multiple ins / outs
         assert isinstance(value, torch.Tensor), "Value must be a torch.Tensor."
 
-        # If all activations are the same, this means the evaluation engine runs the initial batch size calibration
-        if torch.all(value[0, 0] == value):
+        input_mask = self.input_mask_hook.token_mask
+        activation_bins = compute_tensor_stats(value, input_mask, self.granularity)
+        activation_bins = [{"tokens": seq_tokens} for seq_tokens in activation_bins]
+
+        # If all activations close to the first one, this means the evaluation engine runs the initial batch size calibration
+        # Skip saving the data for such batches
+        # The computation is still done to allow for more precise automatic batch size estimation
+        diff = torch.abs(value[0, 0] - value)
+        if torch.all(diff < eps):
             return value
 
-        input_mask = self.input_mask_hook.token_mask
-        batch_size = value.shape[0]
-        activations = []
-        for i in range(batch_size):
-            activations.append(value[i][input_mask[i]].detach().cpu())
+        # For each sequence in the batch, append the dict to the output file
+        with self.output_file.open("a+") as f:
+            for seq_tokens in activation_bins:
+                f.write(json.dumps(seq_tokens) + "\n")
 
-        with (self.output_file / f"activations_{self.batch_idx}.pt").open("wb") as f:
-            torch.save(activations, f)
-        self.batch_idx += 1
-        
         return value
 
 
@@ -92,34 +111,27 @@ class ActivationsMonitor:
     def __init__(
         self,
         sparsity_monitor_config_path: str,
-        output_dir: str,
+        output_dir: Path,
+        granularity: float = 0.05,
     ):
-        raise NotImplementedError("Activations monitor is not implemented yet")
-
+        output_dir = Path(output_dir)
         with Path(sparsity_monitor_config_path).open("r") as f:
             config = json.load(f)
 
-            self.layer_names_to_sparsify = config.get(
-                "layers_to_monitor", None
-            )
+            self.layer_names_to_sparsify = config.get("layers_to_monitor", None)
             self.layer_hook_modes = config.get("hook_mode", None)
+            self.embedding_layer_name = config.get("embedding_layer_name", None)
 
-        self.output_dir = Path(output_dir)
-        self.activations_hooks = []
+        self.granularity = granularity
+        self.activations_hooks: List[ActivationsHook] = []
 
-    def enable(self):
-        for hook in self.activations_hooks:     
-            hook.enable()
-
-    def disable(self):
-        for hook in self.activations_hooks:
-            hook.disable()
+        self.output_dir = output_dir / "activation_stats"
 
     def initialize(self, lm):
         assert self.layer_names_to_sparsify is not None
 
-        input_hook = InputTokensHook(lm.tokenizer.pad_token_type_id)
-        embedding_layer = lm.model.get_submodule("model.embed_tokens")
+        input_hook = InputTokensHook(lm.tokenizer.pad_token_id)
+        embedding_layer = lm.model.get_submodule(self.embedding_layer_name)
         embedding_layer.register_forward_hook(input_hook)
 
         modules_to_hook = [
@@ -135,6 +147,7 @@ class ActivationsMonitor:
                     layer_name=layer_name,
                     input_mask_hook=input_hook,
                     output_dir=self.output_dir,
+                    granularity=self.granularity,
                 )
                 hook_module.register_forward_hook(hook)
             elif hook_mode == "input":
@@ -142,37 +155,9 @@ class ActivationsMonitor:
                     layer_name=layer_name,
                     input_mask_hook=input_hook,
                     output_dir=self.output_dir,
+                    granularity=self.granularity,
                 )
                 hook_module.register_forward_pre_hook(hook)
             else:
                 raise ValueError(f"Invalid sparsification mode: {hook_mode}")
             self.activations_hooks.append(hook)
-
-    def save_layer_sparsity_data(self):
-        total_sparse_neurons = 0
-        total_neurons = 0
-        layer_sparisty_stats = {}
-        for hook in self.sparsity_hooks:
-            layer_name = hook.layer_name
-            sparse_counts = sum(hook.sparse_counts)
-            total_counts = sum(hook.total_counts)
-            assert (
-                total_counts != 0
-            ), f"Total counts for {layer_name} is 0. Check the input mask."
-            sparsity = sparse_counts / total_counts
-            layer_sparisty_stats[layer_name] = sparsity
-            total_sparse_neurons += sparse_counts
-            total_neurons += total_counts
-
-        layer_sparisty_stats["total"] = total_sparse_neurons / total_neurons
-
-        sparsity_dict = {
-            "rule": self.sparsification_rule,
-            "th_val": self.th_val,
-            "layers": self.layer_names_to_sparsify,
-            "hook_modes": self.layer_hook_modes,
-            "sparsity_stats": layer_sparisty_stats,
-        }
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        with (self.output_dir / "sparsity_stats.json").open("w") as f:
-            json.dump(sparsity_dict, f, indent=2)

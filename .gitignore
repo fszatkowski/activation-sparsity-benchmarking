@@ -31,3 +31,5 @@ output*/
 debug*
 plotting
 plotting/*
+eval_results*
+saved_activations*
