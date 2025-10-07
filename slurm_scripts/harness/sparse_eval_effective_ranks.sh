@@ -11,8 +11,8 @@ set -e
 if [ -d "$SCRATCH/conda_envs/asb" ]; then
     eval "$(conda shell.bash hook)"
     conda activate asb
-# If not, try to activate venv
-# We are probably running on Helios where venv has to be used instead
+    # If not, try to activate venv
+    # We are probably running on Helios where venv has to be used instead
 elif [ -d ".venv" ]; then
     module load ML-bundle/24.06a
     source .venv/bin/activate
