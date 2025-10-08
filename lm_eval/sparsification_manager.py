@@ -3,13 +3,11 @@ from abc import ABC
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import torch
 import numpy as np
+import torch
 
 
-def get_topp_mask(
-    tensor: torch.Tensor, topp_val: float
-) -> torch.Tensor:
+def get_topp_mask(tensor: torch.Tensor, topp_val: float) -> torch.Tensor:
     abs_tensor = tensor.abs()
 
     # Sort the activation values, the biggest activations appear first
@@ -48,9 +46,7 @@ def get_topp_mask(
     return non_sparse_mask
 
 
-def get_maxp_mask(
-    tensor: torch.Tensor, maxp_val: float
-) -> torch.Tensor:
+def get_maxp_mask(tensor: torch.Tensor, maxp_val: float) -> torch.Tensor:
     abs_tensor = tensor.abs()
     max_activation_vals = abs_tensor.max(dim=-1).values
     threshold_vals = max_activation_vals * maxp_val
@@ -58,9 +54,7 @@ def get_maxp_mask(
     return non_sparse_mask
 
 
-def get_topk_mask(
-    tensor: torch.Tensor, topk_val: float
-) -> torch.Tensor:
+def get_topk_mask(tensor: torch.Tensor, topk_val: float) -> torch.Tensor:
     feature_dim = tensor.shape[-1]
     topk_int_val = int(feature_dim * topk_val)
     abs_tensor = tensor.abs()
@@ -166,8 +160,12 @@ class SparsificationHook(ABC):
         else:
             batch_size = value.shape[0]
             for batch_idx in range(batch_size):
-                self.current_batch_sparse_counts[batch_idx].extend(num_sparse_neurons[batch_idx])
-                self.current_batch_total_counts[batch_idx].extend(num_all_neurons[batch_idx])
+                self.current_batch_sparse_counts[batch_idx].extend(
+                    num_sparse_neurons[batch_idx]
+                )
+                self.current_batch_total_counts[batch_idx].extend(
+                    num_all_neurons[batch_idx]
+                )
 
         if self.compute_effective_rank:
             self.current_batch_svd_activations.append(value.detach().cpu())
@@ -179,7 +177,9 @@ class SparsificationHook(ABC):
 
         if self.compute_effective_rank:
             # Concatenate the activations along the sequence dimension
-            self.current_batch_svd_activations = torch.cat(self.current_batch_svd_activations, dim=1)
+            self.current_batch_svd_activations = torch.cat(
+                self.current_batch_svd_activations, dim=1
+            )
 
         svd_flat_activations = []
         for batch_idx in range(batch_size):
@@ -187,23 +187,33 @@ class SparsificationHook(ABC):
             sample_total_counts = self.current_batch_total_counts[batch_idx]
             sample_start_index = batch_start_indices[batch_idx]
             sample_end_index = batch_end_indices[batch_idx]
-            
-            sample_sparse_counts = sample_sparse_counts[sample_start_index:sample_end_index]
-            sample_total_counts = sample_total_counts[sample_start_index:sample_end_index]
+
+            sample_sparse_counts = sample_sparse_counts[
+                sample_start_index:sample_end_index
+            ]
+            sample_total_counts = sample_total_counts[
+                sample_start_index:sample_end_index
+            ]
             self.sparse_counts.append(sum(sample_sparse_counts))
             self.total_counts.append(sum(sample_total_counts))
 
             if self.compute_effective_rank:
-                svd_flat_activations.append(self.current_batch_svd_activations[batch_idx, sample_start_index:sample_end_index])
+                svd_flat_activations.append(
+                    self.current_batch_svd_activations[
+                        batch_idx, sample_start_index:sample_end_index
+                    ]
+                )
 
         if self.compute_effective_rank:
             svd_flat_activations = torch.cat(svd_flat_activations, dim=0)
             eps = 1e-10
-            _, S, _ = torch.linalg.svd(svd_flat_activations.float().cuda(), full_matrices=False)
-            S = S + eps # Add eps to avoid log(0)
+            _, S, _ = torch.linalg.svd(
+                svd_flat_activations.float().cuda(), full_matrices=False
+            )
+            S = S + eps  # Add eps to avoid log(0)
             p = S / S.sum()
             effective_rank = torch.exp(-(p * p.log()).sum())
-            
+
             # Normalize by the feature dimension
             self.per_batch_effective_rank.append(effective_rank.item() / self.act_dim)
 
@@ -235,6 +245,7 @@ class SparsificationManager:
         output_dir: str,
         sparsification_rule: str,
         th_val: Optional[float] = None,
+        save_outputs: bool = False,
         compute_effective_rank: bool = False,
     ):
         self.lm = None
@@ -245,6 +256,7 @@ class SparsificationManager:
         assert th_val >= 0, "Threshold value must be greater than or equal to 0."
         assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val
+        self.save_outputs = save_outputs
         self.compute_effective_rank = compute_effective_rank
 
         with Path(sparsification_config_path).open("r") as f:
@@ -260,21 +272,47 @@ class SparsificationManager:
 
         self.output_dir = Path(output_dir)
         self.sparsity_hooks: List[SparsificationHook] = []
+
         self.num_generated_tokens = []
+        self.request_input_ids = []
+        self.request_output_ids = []
+        self.request_input_texts = []
+        self.request_output_texts = []
+        self.batch_lengths = []
 
     def restart(self):
         for hook in self.sparsity_hooks:
             hook.restart()
 
-    def consolidate_batch(self, batch_start_indices, batch_end_indices, num_generated_tokens=None):
-        batch_size = len(batch_start_indices)
-        if num_generated_tokens is None:
-            num_generated_tokens = [0] * batch_size
+        if self.save_outputs:
+            self.request_input_ids = []
+            self.request_output_ids = []
+            self.request_input_texts = []
+            self.request_output_texts = []
+            self.num_generated_tokens = []
+            self.batch_lengths = []
 
-        self.num_generated_tokens.extend(num_generated_tokens)
-
+    def consolidate_batch(self, batch_start_indices, batch_end_indices):
         for hook in self.sparsity_hooks:
             hook.consolidate_batch(batch_start_indices, batch_end_indices)
+
+    def save_model_inputs_and_outputs(
+        self,
+        context_ids,
+        response_ids,
+        decoded_contexts,
+        decoded_responses,
+        num_generated_tokens,
+        batch_lengths,
+    ):
+        # Store the inputs and outputs of the model for each request for logging purposes
+        if self.save_outputs:
+            self.request_input_ids.extend(context_ids)
+            self.request_output_ids.extend(response_ids)
+            self.request_input_texts.extend(decoded_contexts)
+            self.request_output_texts.extend(decoded_responses)
+            self.num_generated_tokens.extend(num_generated_tokens)
+            self.batch_lengths.extend(batch_lengths)
 
     def initialize(self, lm):
         assert self.layer_names_to_sparsify is not None
@@ -337,16 +375,32 @@ class SparsificationManager:
             sparsity_dict["num_generated_tokens_per_sample"] = self.num_generated_tokens
 
         if self.compute_effective_rank:
-            hook_names= [hook.layer_name for hook in self.sparsity_hooks]
+            hook_names = [hook.layer_name for hook in self.sparsity_hooks]
             hook_dims = [hook.act_dim for hook in self.sparsity_hooks]
-            effective_ranks = [np.mean(hook.per_batch_effective_rank) for hook in self.sparsity_hooks]
+            effective_ranks = [
+                np.mean(hook.per_batch_effective_rank) for hook in self.sparsity_hooks
+            ]
             mean_effective_rank = np.mean(effective_ranks)
             effective_ranks = dict(zip(hook_names, effective_ranks))
-            effective_ranks['mean'] = mean_effective_rank
+            effective_ranks["mean"] = mean_effective_rank
 
             sparsity_dict["effective_ranks"] = effective_ranks
-            sparsity_dict['hook_dims'] = dict(zip(hook_names, hook_dims))
+            sparsity_dict["hook_dims"] = dict(zip(hook_names, hook_dims))
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with (self.output_dir / "sparsity_stats.json").open("w") as f:
             json.dump(sparsity_dict, f, indent=2)
+
+        if self.save_outputs:
+            output_path = self.output_dir / "request_logs.json"
+            output_dict = {
+                "input_ids": self.request_input_ids,
+                "output_ids": self.request_output_ids,
+                "input_texts": self.request_input_texts,
+                "output_texts": self.request_output_texts,
+                "batch_lengths": self.batch_lengths,
+                "num_generated_tokens": self.num_generated_tokens,
+            }
+
+            with output_path.open("w") as f:
+                json.dump(output_dict, f, indent=2)

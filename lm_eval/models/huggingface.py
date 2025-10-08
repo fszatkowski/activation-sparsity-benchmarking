@@ -435,7 +435,7 @@ class HFLM(TemplateLM):
 
     @property
     def max_gen_toks(self) -> int:
-        return 4096
+        return 1024
 
     @property
     def batch_size(self):
@@ -1223,13 +1223,31 @@ class HFLM(TemplateLM):
             )  # [batch, padding_length (inp or cont), vocab]
 
             if self.sparsification_manager is not None:
-                batch_seq_len = batched_inps.shape[1]
-                attn_mask = (batched_inps == self.tokenizer.pad_token_id)
-
-                batch_start_indices = [0] * batched_inps.shape[0]
-                batch_end_indices = (batch_seq_len - attn_mask.sum(-1)).tolist()
+                batch_size = batched_inps.shape[0]
+                padded_seq_len = batched_inps.shape[1]
+                attn_mask = (batched_inps != self.tokenizer.pad_token_id)
+                batch_start_indices = [0] * batch_size
+                batch_end_indices = attn_mask.sum(-1).tolist()
 
                 self.sparsification_manager.consolidate_batch(batch_start_indices=batch_start_indices, batch_end_indices=batch_end_indices)
+
+                all_token_ids = batched_inps
+                context_ids = [all_token_ids[idx][batch_start_indices[idx]:batch_end_indices[idx]].tolist() for idx in range(batch_size)]
+                response_ids = [[] for idx in range(batch_size)]
+                decoded_contexts = [self.tokenizer.decode(context_ids[idx]) for idx in range(batch_size)]
+                decoded_responses = [[] for idx in range(batch_size)]
+                num_generated_tokens = [0] * batch_size
+
+                batch_lengths = [padded_seq_len] * batch_size
+                self.sparsification_manager.save_model_inputs_and_outputs(
+                    context_ids=context_ids,
+                    response_ids=response_ids,
+                    decoded_contexts=decoded_contexts,
+                    decoded_responses=decoded_responses,
+                    num_generated_tokens=num_generated_tokens,
+                    batch_lengths=batch_lengths,
+                )
+
 
             for (request_str, ctx_tokens, _), logits, inplen, cont_toks in zip(
                 chunk, multi_logits, inplens, cont_toks_list
@@ -1414,6 +1432,8 @@ class HFLM(TemplateLM):
                 stop=until,
                 **kwargs,
             )
+            batch_size = cont.shape[0]
+            batch_length = cont.shape[1]
 
             cont_toks_list = cont.tolist()
             num_generated_tokens = []
@@ -1431,24 +1451,38 @@ class HFLM(TemplateLM):
                         # ignore '' separator,
                         # for seq2seq case where self.tok_decode(self.eot_token_id) = ''
                         s = s.split(term)[0]
-
+                
                 res.append(s)
 
                 # Store information about the number of generated tokens
                 until_token_ids = self.tokenizer.convert_tokens_to_ids(until)
                 is_eos = [any(t == eos_id for eos_id in until_token_ids) for t in cont_toks]
-                if not any(is_eos):
-                    num_generated_tokens.append(len(cont_toks))
-                else:
-                    num_generated_tokens.append(is_eos.index(True)+1)
+                # Actual number of generated tokens we care about in the example is the one that would stop the generation
+                num_generated_tokens.append(is_eos.index(True) + 1 if any(is_eos) else len(cont_toks))
 
                 self.cache_hook.add_partial("generate_until", (context, gen_kwargs), s)
                 pbar.update(1)
-            
+
             if self.sparsification_manager is not None:
                 batch_start_indices = (attn_masks == 0 ).sum(-1).tolist()
                 batch_end_indices = [context_enc.shape[1] + g for g in num_generated_tokens]
-                self.sparsification_manager.consolidate_batch(batch_start_indices=batch_start_indices, batch_end_indices=batch_end_indices, num_generated_tokens=num_generated_tokens)
+                self.sparsification_manager.consolidate_batch(batch_start_indices=batch_start_indices, batch_end_indices=batch_end_indices)
+                
+                all_token_ids = cont_toks_list
+                context_ids = [all_token_ids[idx][batch_start_indices[idx]:context_enc.shape[1]] for idx in range(batch_size)]
+                response_ids = [all_token_ids[idx][context_enc.shape[1]:batch_end_indices[idx]] for idx in range(batch_size)]
+                decoded_contexts = [self.tokenizer.decode(context_ids[idx]) for idx in range(batch_size)]
+                decoded_responses = [self.tokenizer.decode(response_ids[idx]) for idx in range(batch_size)]
+                batch_lengths = [batch_length] * batch_size
+
+                self.sparsification_manager.save_model_inputs_and_outputs(
+                    context_ids=context_ids,
+                    response_ids=response_ids,
+                    decoded_contexts=decoded_contexts,
+                    decoded_responses=decoded_responses,
+                    num_generated_tokens=num_generated_tokens,
+                    batch_lengths=batch_lengths,
+                )
 
         # reorder this group of results back to original unsorted form
         res = re_ords.get_original(res)
