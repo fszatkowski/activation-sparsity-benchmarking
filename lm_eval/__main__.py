@@ -296,6 +296,12 @@ def setup_parser() -> argparse.ArgumentParser:
         default=False,
         help='Compute the effective rank of the activations',
     )
+    parser.add_argument(
+        '--log_inputs_and_outputs',
+        action='store_true',
+        default=False,
+        help='Log the inputs and outputs of the model for each request in a separate json file.',
+    )
     return parser
 
 
@@ -425,6 +431,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             sparsification_rule=args.sparsification_rule,
             th_val=args.sparsification_th_val,
             compute_effective_rank=args.compute_effective_rank,
+            save_outputs=args.log_inputs_and_outputs,
         )
     else:
         sparsification_manager = None
