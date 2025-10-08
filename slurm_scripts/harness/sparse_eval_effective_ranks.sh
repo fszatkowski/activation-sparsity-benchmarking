@@ -6,16 +6,28 @@
 
 set -e
 
+# Assert that HF_HOME and HF_TOKEN are set
+if [ -z "$HF_HOME" ] || [ -z "$HF_TOKEN" ]; then
+    echo "HF_HOME and HF_TOKEN must be set"
+    exit 1
+fi
+
 # Check if conda env asb exists and active it if so
 # We are probably running on Athena or some other server that has conda installed
 if [ -d "$SCRATCH/conda_envs/asb" ]; then
     eval "$(conda shell.bash hook)"
     conda activate asb
-    # If not, try to activate venv
-    # We are probably running on Helios where venv has to be used instead
+elif [ -d "$HOME/miniconda3/envs/asb" ]; then
+    eval "$(conda shell.bash hook)"
+    conda activate asb
+# If not, try to activate venv
+# We are probably running on Helios where venv has to be used instead
 elif [ -d ".venv" ]; then
     module load ML-bundle/24.06a
     source .venv/bin/activate
+else
+    echo "Cannot activate conda env asb or venv. Exiting."
+    exit 1
 fi
 
 model_dir=$1
