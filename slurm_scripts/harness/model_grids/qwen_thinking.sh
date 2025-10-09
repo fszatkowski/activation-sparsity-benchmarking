@@ -8,6 +8,7 @@ fi
 
 eval_root_dir=eval_results_thinking/
 batch_size=auto
+max_gen_toks=4096
 
 model_setups=(
     "Qwen/Qwen3-4B-Instruct-2507 qwen3-4b-instruct/input lm_eval/sparsification_configs/qwen3-4b_input.json"
@@ -81,6 +82,7 @@ for params in "${model_setups[@]}"; do
                 ${sparsification_rule} \
                 ${sparsification_th} \
                 ${batch_size} \
+                ${max_gen_toks} \
                 ${num_gpus}
         done
     done

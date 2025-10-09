@@ -38,7 +38,8 @@ sparsification_config=$5
 sparsification_rule=$6
 sparsification_th=$7
 batch_size=$8
-num_gpus=${9:-1}
+max_gen_toks=${9:-2048}
+num_gpus=${10:-1}
 
 # Export TORCHDYNAMO_DISABLE=1 if the model name contains 'gemma'
 if [[ $model_dir == *"gemma"* ]]; then
@@ -63,6 +64,7 @@ mkdir -p ${output_path}
 python -m lm_eval.__main__ \
     --model hf \
     --model_args pretrained=${model_dir},trust_remote_code=True,dtype=${dtype},parallelize=${parallelize} \
+    --gen_kwargs max_gen_toks=${max_gen_toks} \
     --tasks ${task} \
     --batch_size ${batch_size} \
     --output_path ${output_path} \

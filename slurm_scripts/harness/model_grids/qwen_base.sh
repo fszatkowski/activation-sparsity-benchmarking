@@ -8,6 +8,7 @@ fi
 
 eval_root_dir=eval_results_bf16/
 batch_size=auto
+max_gen_toks=1024
 
 model_setups=(
     "Qwen/Qwen2.5-0.5B qwen2_5-0_5b/intermediate lm_eval/sparsification_configs/qwen2_5-0_5b_intermediate.json 1"
@@ -96,6 +97,7 @@ for params in "${model_setups[@]}"; do
                 ${sparsification_rule} \
                 ${sparsification_th} \
                 ${batch_size} \
+                ${max_gen_toks} \
                 ${num_gpus}
         done
     done

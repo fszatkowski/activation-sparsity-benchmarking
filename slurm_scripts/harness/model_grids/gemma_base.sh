@@ -8,6 +8,7 @@ fi
 
 eval_root_dir=eval_results_bf16/
 batch_size=auto
+max_gen_toks=1024
 
 model_setups=(
     "google/gemma-3-1b-pt gemma3-1b/intermediate lm_eval/sparsification_configs/gemma3-1b_intermediate.json 1"
@@ -89,6 +90,7 @@ for params in "${model_setups[@]}"; do
                 ${sparsification_rule} \
                 ${sparsification_th} \
                 ${batch_size} \
+                ${max_gen_toks} \
                 ${num_gpus}
         done
     done

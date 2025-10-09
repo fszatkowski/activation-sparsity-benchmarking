@@ -916,11 +916,6 @@ class HFLM(TemplateLM):
             self.tokenizer, stop, context.shape[1], context.shape[0]
         )
 
-        # --- modified code ---
-        # set the max length of the generation in the model to the determined max length to make sure the model does not generate more tokens than needed
-        self.model.generation_config.max_new_tokens = self.max_gen_toks
-        # --- modified code ends ---
-
         return self.model.generate(
             input_ids=context,
             max_length=max_length,
@@ -1399,8 +1394,11 @@ class HFLM(TemplateLM):
                 raise ValueError(
                     f"Expected `kwargs` to be of type `dict` but got {type(gen_kwargs)}"
                 )
-
-            max_gen_toks = self.max_gen_toks
+            
+            if "max_gen_toks" in kwargs:
+                max_gen_toks = kwargs.pop("max_gen_toks")
+            else:
+                max_gen_toks = self.max_gen_toks
 
             # set the max length in tokens of inputs ("context_enc")
             if self.backend == "causal":

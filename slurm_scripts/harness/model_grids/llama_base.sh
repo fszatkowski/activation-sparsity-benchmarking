@@ -8,6 +8,7 @@ fi
 
 eval_root_dir=eval_results_bf16/
 batch_size=auto
+max_gen_toks=1024
 
 model_setups=(
     "meta-llama/Llama-3.2-1B llama3-1b/input lm_eval/sparsification_configs/llama3-1b_input.json 1"
@@ -85,6 +86,7 @@ for params in "${model_setups[@]}"; do
                 ${sparsification_rule} \
                 ${sparsification_th} \
                 ${batch_size} \
+                ${max_gen_toks} \
                 ${num_gpus}
         done
     done
