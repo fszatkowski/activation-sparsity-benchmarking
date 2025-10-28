@@ -224,7 +224,7 @@ def parse_hooks_sparsity_stats(hooks: List["SparsificationHook"]) -> Dict[str, f
     sparse_neurons_prefill = 0
     all_neurons_prefill = 0
     sparse_neurons_generation = 0
-    totalneurons_generation = 0
+    total_neurons_generation = 0
     sparse_neurons_total = 0
     neurons_total = 0
 
@@ -271,7 +271,7 @@ def parse_hooks_sparsity_stats(hooks: List["SparsificationHook"]) -> Dict[str, f
         sparse_neurons_prefill += prefill_sparse_counts
         all_neurons_prefill += prefill_total_counts
         sparse_neurons_generation += generation_sparse_counts
-        totalneurons_generation += generation_total_counts
+        total_neurons_generation += generation_total_counts
         sparse_neurons_total += total_sparse_counts
         neurons_total += total_total_counts
 
@@ -279,7 +279,9 @@ def parse_hooks_sparsity_stats(hooks: List["SparsificationHook"]) -> Dict[str, f
         sparse_neurons_prefill / all_neurons_prefill
     )
     layer_sparisty_stats_generation["average"] = (
-        sparse_neurons_generation / totalneurons_generation
+        sparse_neurons_generation / total_neurons_generation
+        if total_neurons_generation != 0
+        else 0
     )
     layer_sparisty_stats_total["average"] = sparse_neurons_total / neurons_total
 
