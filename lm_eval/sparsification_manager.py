@@ -1,11 +1,18 @@
-import itertools
 import json
 from abc import ABC
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import numpy as np
 import torch
+
+from lm_eval.sparsification_utils import (
+    RunningEffectiveRankStats,
+    RunningSparsityStats,
+    SequenceSparsityStats,
+    parse_hooks_effective_rank_stats,
+    parse_hooks_sparsity_stats,
+    read_sparsification_config,
+)
 
 
 def get_topp_mask(tensor: torch.Tensor, topp_val: float) -> torch.Tensor:
@@ -80,6 +87,7 @@ def sparsify_tensor(
     th_val: Optional[float] = None,
 ) -> Tuple[torch.Tensor, List[int], List[int]]:
     # Check for the device of the input mask and move it to the device of the tensor
+    # Outputs the sparsified tensor, the number of sparse neurons in each token, and the total number of neurons in each token
     if rule == "topp":
         assert th_val is not None, "Topp value must be provided for topp rule"
         non_sparse_mask = get_topp_mask(tensor, th_val)
@@ -95,7 +103,21 @@ def sparsify_tensor(
     sparsified_tensor = torch.where(non_sparse_mask, tensor, torch.zeros_like(tensor))
     sparse_neurons_count = (~non_sparse_mask).sum(-1).detach().cpu().tolist()
     batch_size, seq_len, feature_dim = tensor.shape
-    total_num_neurons = [[feature_dim] * seq_len] * batch_size
+    total_num_neurons = [[feature_dim] * seq_len for _ in range(batch_size)]
+
+    assert (
+        len(sparse_neurons_count) == batch_size
+    ), "Sparse neurons count must have the same length as the batch size"
+    assert (
+        len(total_num_neurons) == batch_size
+    ), "Total neurons count must have the same length as the batch size"
+    for i in range(batch_size):
+        assert (
+            len(sparse_neurons_count[i]) == seq_len
+        ), "Sparse neurons count must have the same length as the sequence length"
+        assert (
+            len(total_num_neurons[i]) == seq_len
+        ), "Total neurons count must have the same length as the sequence length"
 
     return sparsified_tensor, sparse_neurons_count, total_num_neurons
 
@@ -111,30 +133,24 @@ class SparsificationHook(ABC):
         self.layer_name = layer_name
         self.rule = rule
         self.th_val = th_val
+
+        # Per-token activation sparsity values for the currently processed sequence, without masking tokens
+        self.running_stats = RunningSparsityStats()
+        # Total stats across all sequences seen so far, taking the masking into account
+        self.total_stats = SequenceSparsityStats()
+
+        # Whether to compute the effective rank of the activations
         self.compute_effective_rank = compute_effective_rank
-
-        # Per-token activation sparsity values for the current batch without masking
-        self.current_batch_sparse_counts = []
-        self.current_batch_total_counts = []
-        self.current_batch_svd_activations = []
-
-        # Total counts across all batches seen so far, taking the masking into account
-        self.sparse_counts = []
-        self.total_counts = []
-        self.num_generated_tokens = []
-        self.per_batch_effective_rank = []
-        self.act_dim = None
+        # Per-batch stats for effective rank computations, used to compute the effective rank of the activations
+        self.running_effective_rank_stats = RunningEffectiveRankStats()
+        # Effective ranks of the activations stored per batch of samples processed so far
+        # This is consolidated for the whole sequence, that is: either prefill or prefill+generation
+        self.effective_ranks_per_sample_batches = []
+        self.hook_dim = None
 
     def restart(self):
-        self.current_batch_sparse_counts = []
-        self.current_batch_total_counts = []
-        self.current_batch_svd_activations = []
-
-        self.sparse_counts = []
-        self.total_counts = []
-        self.num_generated_tokens = []
-        self.per_batch_effective_rank = []
-        self.act_dim = None
+        self.running_stats = RunningSparsityStats()
+        self.running_effective_rank_stats = RunningEffectiveRankStats()
 
     @torch.inference_mode()
     def generic_call(self, value):
@@ -143,84 +159,56 @@ class SparsificationHook(ABC):
                 0
             ]  # Handle tuple values in case model operates on multiple ins / outs
         assert isinstance(value, torch.Tensor), "Value must be a torch.Tensor."
-        org_shape = value.shape
-
-        if self.act_dim is None:
-            self.act_dim = org_shape[-1]
+        batch_size, seq_len, feature_dim = value.shape
 
         sparsified_value, num_sparse_neurons, num_all_neurons = sparsify_tensor(
             value, self.rule, self.th_val
         )
-        assert (
-            sparsified_value.shape == org_shape
+
+        assert sparsified_value.shape == (
+            batch_size,
+            seq_len,
+            feature_dim,
         ), "Sparsified value has different shape than the original."
 
-        if self.current_batch_sparse_counts == []:
-            self.current_batch_sparse_counts = num_sparse_neurons
-            self.current_batch_total_counts = num_all_neurons
+        # Add prefill size if it's not yet present in the running stats
+        if self.running_stats.prefill_sizes == []:
+            prefill_sizes = [seq_len] * batch_size
         else:
-            batch_size = value.shape[0]
-            for batch_idx in range(batch_size):
-                self.current_batch_sparse_counts[batch_idx].extend(
-                    num_sparse_neurons[batch_idx]
-                )
-                self.current_batch_total_counts[batch_idx].extend(
-                    num_all_neurons[batch_idx]
-                )
+            prefill_sizes = None
 
+        # Update the running sparsity stats
+        self.running_stats.update(
+            sparse_counts=num_sparse_neurons,
+            total_counts=num_all_neurons,
+            prefill_sizes=prefill_sizes,
+        )
+
+        # Store the activations for effective rank computation if required
         if self.compute_effective_rank:
-            self.current_batch_svd_activations.append(value.detach().cpu())
+            self.running_effective_rank_stats.update(
+                activations=value, activations_dim=feature_dim
+            )
+            if self.hook_dim is None:
+                self.hook_dim = feature_dim
 
         return sparsified_value
 
     def consolidate_batch(self, batch_start_indices, batch_end_indices):
-        batch_size = len(batch_start_indices)
+        # Update sequence level stats and restert the running stats
+        current_sequence_stats = self.running_stats.consolidate(
+            batch_start_indices, batch_end_indices
+        )
+        self.total_stats.update(current_sequence_stats)
+        self.running_stats = RunningSparsityStats()
 
         if self.compute_effective_rank:
             # Concatenate the activations along the sequence dimension
-            self.current_batch_svd_activations = torch.cat(
-                self.current_batch_svd_activations, dim=1
+            effective_rank = self.running_effective_rank_stats.compute_effective_rank(
+                batch_start_indices, batch_end_indices
             )
-
-        svd_flat_activations = []
-        for batch_idx in range(batch_size):
-            sample_sparse_counts = self.current_batch_sparse_counts[batch_idx]
-            sample_total_counts = self.current_batch_total_counts[batch_idx]
-            sample_start_index = batch_start_indices[batch_idx]
-            sample_end_index = batch_end_indices[batch_idx]
-
-            sample_sparse_counts = sample_sparse_counts[
-                sample_start_index:sample_end_index
-            ]
-            sample_total_counts = sample_total_counts[
-                sample_start_index:sample_end_index
-            ]
-            self.sparse_counts.append(sum(sample_sparse_counts))
-            self.total_counts.append(sum(sample_total_counts))
-
-            if self.compute_effective_rank:
-                svd_flat_activations.append(
-                    self.current_batch_svd_activations[
-                        batch_idx, sample_start_index:sample_end_index
-                    ]
-                )
-
-        if self.compute_effective_rank:
-            svd_flat_activations = torch.cat(svd_flat_activations, dim=0)
-            eps = 1e-10
-            _, S, _ = torch.linalg.svd(
-                svd_flat_activations.float().cuda(), full_matrices=False
-            )
-            S = S + eps  # Add eps to avoid log(0)
-            p = S / S.sum()
-            effective_rank = torch.exp(-(p * p.log()).sum())
-
-            # Normalize by the feature dimension
-            self.per_batch_effective_rank.append(effective_rank.item() / self.act_dim)
-
-        self.current_batch_sparse_counts = []
-        self.current_batch_total_counts = []
-        self.current_batch_svd_activations = []
+            self.effective_ranks_per_sample_batches.append(effective_rank)
+            self.running_effective_rank_stats = RunningEffectiveRankStats()
 
 
 # Pytorch hook to enforce sparsity on the output of the module
@@ -237,23 +225,6 @@ class InputSparsificationHook(SparsificationHook):
     def __call__(self, module, input_tensor):
         value = input_tensor
         return self.generic_call(value)
-
-
-def parse_layers_to_sparsify(layer_indices_string: str) -> List[int]:
-    layer_indices_string = layer_indices_string.strip().replace(" ", "")
-    if "," in layer_indices_string:
-        substrings = layer_indices_string.split(",")
-    else:
-        substrings = [layer_indices_string]
-
-    layer_indices = []
-    for substring in substrings:
-        if ":" in substring:
-            start_index, end_index = substring.split(":")
-            layer_indices.extend(list(range(int(start_index), int(end_index) + 1)))
-        else:
-            layer_indices.append(int(substring))
-    return layer_indices
 
 
 class SparsificationManager:
@@ -274,50 +245,18 @@ class SparsificationManager:
         assert th_val >= 0, "Threshold value must be greater than or equal to 0."
         assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val
-        self.save_outputs = save_outputs
-        self.compute_effective_rank = compute_effective_rank
-
-        with Path(sparsification_config_path).open("r") as f:
-            sparsity_config = json.load(f)
-
-            self.embedding_layer_name = sparsity_config["embedding_layer_name"]
-            layers_to_sparsify = sparsity_config["layers_to_sparsify"]
-            layers_to_sparsify = {
-                key: parse_layers_to_sparsify(layer_indices_string)
-                for key, layer_indices_string in layers_to_sparsify.items()
-            }
-            modules_to_sparsify = sparsity_config["modules_to_sparsify"]
-
-            layer_names_to_sparsify = []
-            layer_hook_modes = []
-
-            for module_name_string, hook_mode in modules_to_sparsify.items():
-                sparsify_indices = {
-                    key: indices
-                    for key, indices in layers_to_sparsify.items()
-                    if key in module_name_string
-                }
-                if len(sparsify_indices) > 0:
-                    # Create product consisting of all the sparsify key values combinations
-                    values_to_substitute = [
-                        dict(zip(sparsify_indices.keys(), values))
-                        for values in itertools.product(*sparsify_indices.values())
-                    ]
-                    for values in values_to_substitute:
-                        new_string = module_name_string
-                        for key, value in values.items():
-                            new_string = new_string.replace(key, str(value))
-                        layer_names_to_sparsify.append(new_string)
-                        layer_hook_modes.append(hook_mode)
-                else:
-                    layer_names_to_sparsify.append(module_name_string)
-                    layer_hook_modes.append(hook_mode)
-
-            self.layer_names_to_sparsify = layer_names_to_sparsify
-            self.layer_hook_modes = layer_hook_modes
 
         self.output_dir = Path(output_dir)
+        (
+            self.embedding_layer_name,
+            self.layer_names_to_sparsify,
+            self.layer_hook_modes,
+        ) = read_sparsification_config(sparsification_config_path)
         self.sparsity_hooks: List[SparsificationHook] = []
+
+        self.save_outputs = save_outputs
+        self.requests_data = []
+        self.compute_effective_rank = compute_effective_rank
 
         self.num_generated_tokens = []
         self.request_input_ids = []
@@ -325,40 +264,6 @@ class SparsificationManager:
         self.request_input_texts = []
         self.request_output_texts = []
         self.batch_lengths = []
-
-    def restart(self):
-        for hook in self.sparsity_hooks:
-            hook.restart()
-
-        if self.save_outputs:
-            self.request_input_ids = []
-            self.request_output_ids = []
-            self.request_input_texts = []
-            self.request_output_texts = []
-            self.num_generated_tokens = []
-            self.batch_lengths = []
-
-    def consolidate_batch(self, batch_start_indices, batch_end_indices):
-        for hook in self.sparsity_hooks:
-            hook.consolidate_batch(batch_start_indices, batch_end_indices)
-
-    def save_model_inputs_and_outputs(
-        self,
-        context_ids,
-        response_ids,
-        decoded_contexts,
-        decoded_responses,
-        num_generated_tokens,
-        batch_lengths,
-    ):
-        # Store the inputs and outputs of the model for each request for logging purposes
-        if self.save_outputs:
-            self.request_input_ids.extend(context_ids)
-            self.request_output_ids.extend(response_ids)
-            self.request_input_texts.extend(decoded_contexts)
-            self.request_output_texts.extend(decoded_responses)
-            self.num_generated_tokens.extend(num_generated_tokens)
-            self.batch_lengths.extend(batch_lengths)
 
     def initialize(self, lm):
         assert self.layer_names_to_sparsify is not None
@@ -391,47 +296,58 @@ class SparsificationManager:
                 raise ValueError(f"Invalid sparsification mode: {hook_mode}")
             self.sparsity_hooks.append(hook)
 
-    def save_layer_sparsity_data(self):
-        total_sparse_neurons = 0
-        total_neurons = 0
-
-        layer_sparisty_stats = {}
+    def restart(self):
         for hook in self.sparsity_hooks:
-            layer_name = hook.layer_name
-            sparse_counts = sum(hook.sparse_counts)
-            total_counts = sum(hook.total_counts)
-            assert (
-                total_counts != 0
-            ), f"Total counts for {layer_name} is 0. Check the input mask."
-            sparsity = sparse_counts / total_counts
-            layer_sparisty_stats[layer_name] = sparsity
-            total_sparse_neurons += sparse_counts
-            total_neurons += total_counts
+            hook.restart()
 
-        layer_sparisty_stats["total"] = total_sparse_neurons / total_neurons
+        if self.save_outputs:
+            self.requests_data = []
 
+    def consolidate_batch(self, batch_start_indices, batch_end_indices):
+        for hook in self.sparsity_hooks:
+            hook.consolidate_batch(batch_start_indices, batch_end_indices)
+
+    def save_model_inputs_and_outputs(
+        self,
+        context_ids,
+        response_ids,
+        decoded_contexts,
+        decoded_responses,
+        num_generated_tokens,
+        batch_lengths,
+    ):
+        # Store the inputs and outputs of the model for each request for logging purposes
+        if self.save_outputs:
+            self.request_input_ids.extend(context_ids)
+            self.request_output_ids.extend(response_ids)
+            self.request_input_texts.extend(decoded_contexts)
+            self.request_output_texts.extend(decoded_responses)
+            self.num_generated_tokens.extend(num_generated_tokens)
+            self.batch_lengths.extend(batch_lengths)
+
+    def save_layer_sparsity_data(self):
+        prefill_stats, generation_stats, total_stats = parse_hooks_sparsity_stats(
+            self.sparsity_hooks
+        )
         sparsity_dict = {
             "rule": self.sparsification_rule,
             "th_val": self.th_val,
             "layers": self.layer_names_to_sparsify,
             "hook_modes": self.layer_hook_modes,
-            "sparsity_stats": layer_sparisty_stats,
+            "sparsity_stats": total_stats,
+            "sparsity_stats_prefill": prefill_stats,
+            "sparsity_stats_generation": generation_stats,
         }
+
         if len(self.num_generated_tokens) > 0:
             sparsity_dict["num_generated_tokens_per_sample"] = self.num_generated_tokens
 
         if self.compute_effective_rank:
-            hook_names = [hook.layer_name for hook in self.sparsity_hooks]
-            hook_dims = [hook.act_dim for hook in self.sparsity_hooks]
-            effective_ranks = [
-                np.mean(hook.per_batch_effective_rank) for hook in self.sparsity_hooks
-            ]
-            mean_effective_rank = np.mean(effective_ranks)
-            effective_ranks = dict(zip(hook_names, effective_ranks))
-            effective_ranks["mean"] = mean_effective_rank
-
+            effective_ranks, hook_dims = parse_hooks_effective_rank_stats(
+                self.sparsity_hooks
+            )
             sparsity_dict["effective_ranks"] = effective_ranks
-            sparsity_dict["hook_dims"] = dict(zip(hook_names, hook_dims))
+            sparsity_dict["hook_dims"] = hook_dims
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with (self.output_dir / "sparsity_stats.json").open("w") as f:
