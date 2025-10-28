@@ -1,9 +1,0 @@
-{
-    "embedding_layer_name": "model.embed_tokens",
-    "layers_to_sparsify": [
-        "model.layers.25.mlp.act_fn"
-    ],
-    "hook_mode": [
-        "output"
-    ]
-}
