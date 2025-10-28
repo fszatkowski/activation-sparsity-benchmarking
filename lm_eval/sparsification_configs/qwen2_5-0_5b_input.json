@@ -1,55 +1,9 @@
 {
     "embedding_layer_name": "model.embed_tokens",
-    "layers_to_sparsify": [
-        "model.layers.0.mlp",
-        "model.layers.1.mlp",
-        "model.layers.2.mlp",
-        "model.layers.3.mlp",
-        "model.layers.4.mlp",
-        "model.layers.5.mlp",
-        "model.layers.6.mlp",
-        "model.layers.7.mlp",
-        "model.layers.8.mlp",
-        "model.layers.9.mlp",
-        "model.layers.10.mlp",
-        "model.layers.11.mlp",
-        "model.layers.12.mlp",
-        "model.layers.13.mlp",
-        "model.layers.14.mlp",
-        "model.layers.15.mlp",
-        "model.layers.16.mlp",
-        "model.layers.17.mlp",
-        "model.layers.18.mlp",
-        "model.layers.19.mlp",
-        "model.layers.20.mlp",
-        "model.layers.21.mlp",
-        "model.layers.22.mlp",
-        "model.layers.23.mlp"
-    ],
-    "hook_mode": [
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input",
-        "input"
-    ]
+    "modules_to_sparsify": {
+        "model.layers.L.mlp": "input"
+    },
+    "layers_to_sparsify": {
+        "L": "0:23"
+    }
 }

@@ -1,3 +1,4 @@
+import itertools
 import json
 from abc import ABC
 from pathlib import Path
@@ -238,6 +239,23 @@ class InputSparsificationHook(SparsificationHook):
         return self.generic_call(value)
 
 
+def parse_layers_to_sparsify(layer_indices_string: str) -> List[int]:
+    layer_indices_string = layer_indices_string.strip().replace(" ", "")
+    if "," in layer_indices_string:
+        substrings = layer_indices_string.split(",")
+    else:
+        substrings = [layer_indices_string]
+
+    layer_indices = []
+    for substring in substrings:
+        if ":" in substring:
+            start_index, end_index = substring.split(":")
+            layer_indices.extend(list(range(int(start_index), int(end_index) + 1)))
+        else:
+            layer_indices.append(int(substring))
+    return layer_indices
+
+
 class SparsificationManager:
     def __init__(
         self,
@@ -262,13 +280,41 @@ class SparsificationManager:
         with Path(sparsification_config_path).open("r") as f:
             sparsity_config = json.load(f)
 
-            self.layer_names_to_sparsify = sparsity_config.get(
-                "layers_to_sparsify", None
-            )
-            self.layer_hook_modes = sparsity_config.get("hook_mode", None)
-            self.embedding_layer_name = sparsity_config.get(
-                "embedding_layer_name", None
-            )
+            self.embedding_layer_name = sparsity_config["embedding_layer_name"]
+            layers_to_sparsify = sparsity_config["layers_to_sparsify"]
+            layers_to_sparsify = {
+                key: parse_layers_to_sparsify(layer_indices_string)
+                for key, layer_indices_string in layers_to_sparsify.items()
+            }
+            modules_to_sparsify = sparsity_config["modules_to_sparsify"]
+
+            layer_names_to_sparsify = []
+            layer_hook_modes = []
+
+            for module_name_string, hook_mode in modules_to_sparsify.items():
+                sparsify_indices = {
+                    key: indices
+                    for key, indices in layers_to_sparsify.items()
+                    if key in module_name_string
+                }
+                if len(sparsify_indices) > 0:
+                    # Create product consisting of all the sparsify key values combinations
+                    values_to_substitute = [
+                        dict(zip(sparsify_indices.keys(), values))
+                        for values in itertools.product(*sparsify_indices.values())
+                    ]
+                    for values in values_to_substitute:
+                        new_string = module_name_string
+                        for key, value in values.items():
+                            new_string = new_string.replace(key, str(value))
+                        layer_names_to_sparsify.append(new_string)
+                        layer_hook_modes.append(hook_mode)
+                else:
+                    layer_names_to_sparsify.append(module_name_string)
+                    layer_hook_modes.append(hook_mode)
+
+            self.layer_names_to_sparsify = layer_names_to_sparsify
+            self.layer_hook_modes = layer_hook_modes
 
         self.output_dir = Path(output_dir)
         self.sparsity_hooks: List[SparsificationHook] = []
