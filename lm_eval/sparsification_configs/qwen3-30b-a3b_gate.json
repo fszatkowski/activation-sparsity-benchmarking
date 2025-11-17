@@ -1,0 +1,10 @@
+{
+    "embedding_layer_name": "model.embed_tokens",
+    "modules_to_sparsify": {
+        "model.layers.L.mlp.experts.E.act_fn": "output"
+    },
+    "layers_to_sparsify": {
+        "L": "0:35",
+        "E": "0:127"
+    }
+}

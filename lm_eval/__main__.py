@@ -10,6 +10,7 @@ from lm_eval import evaluator, utils
 from lm_eval.evaluator import request_caching_arg_to_dict
 from lm_eval.loggers import EvaluationTracker, WandbLogger
 from lm_eval.sparsification_manager import SparsificationManager
+from lm_eval.sparsification_manager_moe import MoESparsificationManager
 from lm_eval.activations_monitor import ActivationsMonitor
 from lm_eval.tasks import TaskManager
 from lm_eval.utils import handle_non_serializable, make_table, simple_parse_args_string
@@ -302,6 +303,12 @@ def setup_parser() -> argparse.ArgumentParser:
         default=False,
         help='Log the inputs and outputs of the model for each request in a separate json file.',
     )
+    parser.add_argument(
+        '--moe',
+        default=False,
+        action='store_true',
+        help='If set, will run the evaluation with MoE sparsity manager, which simplifies the logic to handle MoE models but can only use batch size 1.',
+    )
     return parser
 
 
@@ -425,14 +432,25 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     )
 
     if args.sparsification_config is not None:
-        sparsification_manager = SparsificationManager(
-            args.sparsification_config,
-            output_dir=args.output_path,
-            sparsification_rule=args.sparsification_rule,
-            th_val=args.sparsification_th_val,
-            compute_effective_rank=args.compute_effective_rank,
-            save_outputs=args.log_inputs_and_outputs,
-        )
+        if args.moe:
+            assert args.batch_size == 1, "MoE sparsity manager can only use batch size 1."
+            sparsification_manager = MoESparsificationManager(
+                args.sparsification_config,
+                output_dir=args.output_path,
+                sparsification_rule=args.sparsification_rule,
+                th_val=args.sparsification_th_val,
+                compute_effective_rank=args.compute_effective_rank,
+                save_outputs=args.log_inputs_and_outputs,
+            )
+        else:
+            sparsification_manager = SparsificationManager(
+                args.sparsification_config,
+                output_dir=args.output_path,
+                sparsification_rule=args.sparsification_rule,
+                th_val=args.sparsification_th_val,
+                compute_effective_rank=args.compute_effective_rank,
+                save_outputs=args.log_inputs_and_outputs,
+            )
     else:
         sparsification_manager = None
 
