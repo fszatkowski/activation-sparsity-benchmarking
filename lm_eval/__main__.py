@@ -273,6 +273,12 @@ def setup_parser() -> argparse.ArgumentParser:
         help="Value to use for sparsification rule. Should be 0-1.",
     )
     parser.add_argument(
+        "--sparsification_topp_power",
+        default=1.0,
+        type=float,
+        help="Power to use for topp sparsification. Should be >= 1.0.",
+    )
+    parser.add_argument(
         "--sparsification_rule",
         default=None,
         choices=[None, "topp", "topk", "maxp"],
@@ -448,6 +454,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
                 output_dir=args.output_path,
                 sparsification_rule=args.sparsification_rule,
                 th_val=args.sparsification_th_val,
+                topp_power=args.sparsification_topp_power,
                 compute_effective_rank=args.compute_effective_rank,
                 save_outputs=args.log_inputs_and_outputs,
             )
