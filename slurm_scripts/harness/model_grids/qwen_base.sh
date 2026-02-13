@@ -76,7 +76,7 @@ for params in "${model_setups[@]}"; do
     read -r model_path model_eval_dir sparsification_config num_gpus <<< "$params"
     echo "Submitting jobs for model: ${model_path} with sparsification config: ${sparsification_config}"
 
-    eval_dir=${eval_root_dir}/${model_eval_dir}/num_gpus
+    eval_dir=${eval_root_dir}/${model_eval_dir}/
     for sparsity_setup in "${sparsity_setups[@]}"; do
         read -r sparsification_rule sparsification_th <<< "$sparsity_setup"
         run_name="${sparsification_rule}_${sparsification_th}"
