@@ -433,7 +433,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
 
     if args.sparsification_config is not None:
         if args.moe:
-            assert args.batch_size == 1, "MoE sparsity manager can only use batch size 1."
+            assert str.isnumeric(args.batch_size) and int(args.batch_size) == 1, "MoE sparsity manager can only use batch size 1."
             sparsification_manager = MoESparsificationManager(
                 args.sparsification_config,
                 output_dir=args.output_path,

@@ -169,12 +169,12 @@ class MoESparsificationHook(ABC):
         # Add prefill size if it's not yet present in the running stats
         if self.running_prefill_sparse_count is None:
             # We run with batch size 1, so the prefill size is the number of tokens for the first pass in the current sequence
-            self.running_prefill_sparse_count = num_tokens
-            self.running_prefill_total_count = num_all_neurons
+            self.running_prefill_sparse_count = sum(num_sparse_neurons)
+            self.running_prefill_total_count = sum(num_all_neurons)
 
         # Update the running sparsity stats
-        self.running_sparse_count += num_sparse_neurons
-        self.running_total_count += num_all_neurons
+        self.running_sparse_count += sum(num_sparse_neurons)
+        self.running_total_count += sum(num_all_neurons)
 
         return sparsified_value
 
@@ -182,8 +182,16 @@ class MoESparsificationHook(ABC):
         # Update sequence level stats and restert the running stats
         self.total_sparse_count += self.running_sparse_count
         self.total_total_count += self.running_total_count
-        self.total_prefill_sparse_count += self.running_prefill_sparse_count
-        self.total_prefill_total_count += self.running_prefill_total_count
+        self.total_prefill_sparse_count += (
+            self.running_prefill_sparse_count
+            if self.running_prefill_sparse_count is not None
+            else 0
+        )
+        self.total_prefill_total_count += (
+            self.running_prefill_total_count
+            if self.running_prefill_total_count is not None
+            else 0
+        )
 
         self.running_sparse_count = 0
         self.running_total_count = 0
@@ -348,10 +356,6 @@ def parse_hooks_sparsity_stats(hooks: List["SparsificationHook"]) -> Dict[str, f
         prefill_total_counts = hook.total_prefill_total_count
         generation_sparse_counts = total_sparse_counts - prefill_sparse_counts
         generation_total_counts = total_total_counts - prefill_total_counts
-
-        assert (
-            total_total_counts != 0
-        ), f"Total counts for {layer_name} is 0. Check the input mask."
 
         prefill_sparsity = (
             prefill_sparse_counts / prefill_total_counts
