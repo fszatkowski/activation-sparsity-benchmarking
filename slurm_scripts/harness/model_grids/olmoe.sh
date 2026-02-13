@@ -10,11 +10,11 @@ eval_root_dir=eval_results_moe/
 max_gen_toks=128
 
 model_setups=(
-    "Qwen/Qwen3-30B-A3B qwen3-30b-a3b/all_inputs lm_eval/sparsification_configs/qwen3-30b-a3b_all_inputs.json 1"
-    "Qwen/Qwen3-30B-A3B qwen3-30b-a3b/intermediate lm_eval/sparsification_configs/qwen3-30b-a3b_intermediate.json 1"
-    "Qwen/Qwen3-30B-A3B qwen3-30b-a3b/gate lm_eval/sparsification_configs/qwen3-30b-a3b_gate.json 1"
-    "Qwen/Qwen3-30B-A3B qwen3-30b-a3b/input lm_eval/sparsification_configs/qwen3-30b-a3b_input.json 1"
-    "Qwen/Qwen3-30B-A3B qwen3-30b-a3b/up_proj lm_eval/sparsification_configs/qwen3-30b-a3b_up_proj.json 1"
+    "allenai/OLMoE-1B-7B-0125 olmoe-7b-a1b/all_inputs lm_eval/sparsification_configs/olmoe-7b-a1b_all_inputs.json 1"
+    "allenai/OLMoE-1B-7B-0125 olmoe-7b-a1b/intermediate lm_eval/sparsification_configs/olmoe-7b-a1b_intermediate.json 1"
+    "allenai/OLMoE-1B-7B-0125 olmoe-7b-a1b/gate lm_eval/sparsification_configs/olmoe-7b-a1b_gate.json 1"
+    "allenai/OLMoE-1B-7B-0125 olmoe-7b-a1b/input lm_eval/sparsification_configs/olmoe-7b-a1b_input.json 1"
+    "allenai/OLMoE-1B-7B-0125 olmoe-7b-a1b/up_proj lm_eval/sparsification_configs/olmoe-7b-a1b_up_proj.json 1"
 )
 sparsity_setups=(
     "topp 1.00"
