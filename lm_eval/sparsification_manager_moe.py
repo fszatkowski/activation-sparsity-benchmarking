@@ -229,7 +229,7 @@ class MoESparsificationManager:
         self.sparsification_rule = sparsification_rule
         assert (
             th_val is not None
-        ), "Threshold value must be provided for sparsified infreence."
+        ), "Threshold value must be provided for sparsified inference."
         assert th_val >= 0, "Threshold value must be greater than or equal to 0."
         assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val

@@ -253,6 +253,8 @@ class SparsificationManager:
         assert th_val >= 0, "Threshold value must be greater than or equal to 0."
         assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val
+
+        assert topp_power >= 1.0, "topp_power for sparsification must be >= 1.0"
         self.topp_power = topp_power
 
         self.output_dir = Path(output_dir)
