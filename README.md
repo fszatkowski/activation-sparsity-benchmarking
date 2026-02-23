@@ -1,16 +1,16 @@
 # Activation Sparsity Benchmarking
 
-Code for the paper **"Universal Properties of Activation Sparsity in Modern Large Language Models"** published at **ICLR 2026**.
+Code for the paper **"Universal Properties of Activation Sparsity in Modern Large Language Models"** published at **ICLR 2026** 🎉
 
 **Authors:** Filip Szatkowski, Patryk Będkowski, Alessio Devoto, Jan Dubiński, Pasquale Minervini, Mikołaj Piórczyński, Simone Scardapane, Bartosz Wójcik
 
-[[Paper (arXiv)]](https://arxiv.org/abs/2509.00454)
+[![arXiv](https://img.shields.io/badge/arXiv-2509.00454-b31b1b.svg)](https://arxiv.org/abs/2509.00454)
 
-## Overview
+## 🔍 Overview
 
 This repository provides tools for systematically evaluating activation sparsity robustness in modern Large Language Models. We extend the [EleutherAI LM Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness) with sparsification capabilities that allow zeroing out activations in FFN layers according to configurable rules and thresholds, and then measuring the impact on downstream task performance.
 
-## Repository Structure
+## 📁 Repository Structure
 
 ```
 activation_sparsity_benchmarking/
@@ -30,7 +30,7 @@ activation_sparsity_benchmarking/
 └── sparsified_llada/      # LLaDA (diffusion LLM) evaluation code (coming soon)
 ```
 
-## Sparsified Harness
+## 🔧 Sparsified Harness
 
 The `sparsified_harness` directory contains a modified version of the [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) (v0.4.7) with added activation sparsification support. The key additions are:
 
@@ -38,7 +38,7 @@ The `sparsified_harness` directory contains a modified version of the [lm-evalua
 - **Sparsification Configs** — JSON configuration files that specify which modules to sparsify for each model architecture (Llama 3, Qwen 2.5, Gemma 3, OLMoE, etc.).
 - **Activation Monitoring** — optional recording of activation statistics and effective ranks.
 
-### Installation
+### 📦 Installation
 
 ```bash
 cd sparsified_harness
@@ -47,10 +47,12 @@ pip install -e .
 
 You will also need to set the following environment variables:
 
-- `HF_TOKEN` — your Hugging Face access token
-- `HF_HOME` — directory for caching models and datasets
+| Variable | Description |
+|----------|-------------|
+| `HF_TOKEN` | Your Hugging Face access token |
+| `HF_HOME` | Directory for caching models and datasets |
 
-### Usage
+### 🚀 Usage
 
 Run a sparsified evaluation directly:
 
@@ -68,26 +70,28 @@ python -m lm_eval.__main__ \
 
 The sparsification configs define which layers and modules to target. You can generate new configs or modify existing ones via `lm_eval/sparsification_configs/create_configs.py`.
 
-### Reproducing Paper Experiments
+The sparsification code should work with most HuggingFace transformer models out of the box — just make sure to provide a matching sparsification config that correctly maps the module names for your architecture.
 
-The grid search scripts under `slurm_scripts/harness/model_grids/` automate the full sweep of models, sparsification targets, and thresholds reported in the paper. For example:
+> **Tip:** If you're evaluating instruction-tuned or chat models, double-check that the chat template and generation settings (e.g., `max_gen_toks`, system prompts) are configured correctly for your model. Mismatched templates can significantly affect results.
+
+### 🧪 Reproducing Paper Experiments (SLURM)
+
+We provide SLURM grid search scripts under `slurm_scripts/harness/model_grids/` as **skeletons** for reproducing the experiments from the paper. These scripts sweep over models, sparsification targets, and thresholds, and submit jobs via `sbatch`. Example:
 
 ```bash
-# Set required SLURM variables
 export SLURM_ACC=<your_account>
 export SLURM_PARTITION=<your_partition>
 
-# Launch the Llama evaluation grid
 bash slurm_scripts/harness/model_grids/llama_base.sh
 ```
 
-> **Note:** The SLURM scripts were developed for use on specific compute clusters and may require adaptation for your environment (e.g., conda environment names, module loads, GPU configurations, partition names). Refer to `sparsified_harness/SETUP.md` for environment variable details.
+> ⚠️ **Important:** These scripts are **not** turnkey reproducibility scripts — they were written for specific compute clusters (with particular conda environments, module systems, and GPU setups) and should be treated as **templates**. You will likely need to adapt environment activation, partition names, GPU resource requests, and paths to match your infrastructure. See `sparsified_harness/SETUP.md` for details on required environment variables.
 
-## LLaDA Evaluations
+## 🧬 LLaDA Evaluations
 
-The `sparsified_llada/` directory will contain evaluation code for activation sparsity experiments on diffusion-based LLMs (LLaDA). This code is coming soon.
+The `sparsified_llada/` directory will contain evaluation code for activation sparsity experiments on diffusion-based LLMs (LLaDA) — the first study of activation sparsity in this model family. **Code coming soon.**
 
-## Citation
+## 📝 Citation
 
 If you find this work useful, please cite:
 
