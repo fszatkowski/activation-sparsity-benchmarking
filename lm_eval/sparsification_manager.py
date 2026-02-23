@@ -15,11 +15,13 @@ from lm_eval.sparsification_utils import (
 )
 
 
-def get_topp_mask(tensor: torch.Tensor, topp_val: float, topp_power: float = 1.0) -> torch.Tensor:
+def get_topp_mask(
+    tensor: torch.Tensor, topp_val: float, topp_power: float = 1.0
+) -> torch.Tensor:
     abs_tensor = tensor.abs()
     if topp_power != 1.0:
-        abs_tensor = abs_tensor ** topp_power
-        
+        abs_tensor = abs_tensor**topp_power
+
     # Sort the activation values, the biggest activations appear first
     sorted_activations, _ = abs_tensor.sort(descending=True, dim=-1)
 

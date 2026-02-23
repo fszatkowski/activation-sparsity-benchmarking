@@ -333,7 +333,9 @@ class MoESparsificationManager:
             )
 
 
-def parse_hooks_sparsity_stats(hooks: List["SparsificationHook"]) -> Dict[str, float]:
+def parse_hooks_sparsity_stats(
+    hooks: List["MoESparsificationHook"],
+) -> Dict[str, float]:
     layer_sparisty_stats_prefill = {}
     layer_sparisty_stats_generation = {}
     layer_sparisty_stats_total = {}

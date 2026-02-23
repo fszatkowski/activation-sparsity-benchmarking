@@ -97,9 +97,9 @@ def setup_parser() -> argparse.ArgumentParser:
         "--batch_size",
         "-b",
         type=str,
-        default=1,
+        default='auto',
         metavar="auto|auto:N|N",
-        help="Acceptable values are 'auto', 'auto:N' or N, where N is an integer. Default 1.",
+        help="Acceptable values are 'auto', 'auto:N' or N, where N is an integer. Defaults to 'auto'.",
     )
     parser.add_argument(
         "--max_batch_size",
