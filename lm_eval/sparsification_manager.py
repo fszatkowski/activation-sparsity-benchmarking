@@ -15,8 +15,12 @@ from lm_eval.sparsification_utils import (
 )
 
 
-def get_topp_mask(tensor: torch.Tensor, topp_val: float) -> torch.Tensor:
+def get_topp_mask(
+    tensor: torch.Tensor, topp_val: float, topp_power: float = 1.0
+) -> torch.Tensor:
     abs_tensor = tensor.abs()
+    if topp_power != 1.0:
+        abs_tensor = abs_tensor**topp_power
 
     # Sort the activation values, the biggest activations appear first
     sorted_activations, _ = abs_tensor.sort(descending=True, dim=-1)
@@ -85,12 +89,13 @@ def sparsify_tensor(
     tensor: torch.Tensor,
     rule: str,
     th_val: Optional[float] = None,
+    topp_power: float = 1.0,
 ) -> Tuple[torch.Tensor, List[int], List[int]]:
     # Check for the device of the input mask and move it to the device of the tensor
     # Outputs the sparsified tensor, the number of sparse neurons in each token, and the total number of neurons in each token
     if rule == "topp":
         assert th_val is not None, "Topp value must be provided for topp rule"
-        non_sparse_mask = get_topp_mask(tensor, th_val)
+        non_sparse_mask = get_topp_mask(tensor, th_val, topp_power)
     elif rule == "maxp":
         assert th_val is not None, "Maxp value must be provided for maxp rule"
         non_sparse_mask = get_maxp_mask(tensor, th_val)
@@ -128,11 +133,13 @@ class SparsificationHook(ABC):
         layer_name: str,
         rule: str,
         th_val: Optional[float] = None,
+        topp_power: float = 1.0,
         compute_effective_rank: bool = False,
     ):
         self.layer_name = layer_name
         self.rule = rule
         self.th_val = th_val
+        self.topp_power = topp_power
 
         # Per-token activation sparsity values for the currently processed sequence, without masking tokens
         self.running_stats = RunningSparsityStats()
@@ -162,7 +169,7 @@ class SparsificationHook(ABC):
         batch_size, seq_len, feature_dim = value.shape
 
         sparsified_value, num_sparse_neurons, num_all_neurons = sparsify_tensor(
-            value, self.rule, self.th_val
+            value, self.rule, self.th_val, self.topp_power
         )
 
         assert sparsified_value.shape == (
@@ -234,6 +241,7 @@ class SparsificationManager:
         output_dir: str,
         sparsification_rule: str,
         th_val: Optional[float] = None,
+        topp_power: float = 1.0,
         save_outputs: bool = False,
         compute_effective_rank: bool = False,
     ):
@@ -245,6 +253,9 @@ class SparsificationManager:
         assert th_val >= 0, "Threshold value must be greater than or equal to 0."
         assert th_val <= 1, "Threshold value must be less than or equal to 1."
         self.th_val = th_val
+
+        assert topp_power >= 1.0, "topp_power for sparsification must be >= 1.0"
+        self.topp_power = topp_power
 
         self.output_dir = Path(output_dir)
         (
@@ -281,6 +292,7 @@ class SparsificationManager:
                     layer_name=layer_name,
                     rule=self.sparsification_rule,
                     th_val=self.th_val,
+                    topp_power=self.topp_power,
                     compute_effective_rank=self.compute_effective_rank,
                 )
                 hook_module.register_forward_hook(hook)
@@ -289,6 +301,7 @@ class SparsificationManager:
                     layer_name=layer_name,
                     rule=self.sparsification_rule,
                     th_val=self.th_val,
+                    topp_power=self.topp_power,
                     compute_effective_rank=self.compute_effective_rank,
                 )
                 hook_module.register_forward_pre_hook(hook)
@@ -332,6 +345,7 @@ class SparsificationManager:
         sparsity_dict = {
             "rule": self.sparsification_rule,
             "th_val": self.th_val,
+            "topp_power": self.topp_power,
             "layers": self.layer_names_to_sparsify,
             "hook_modes": self.layer_hook_modes,
             "sparsity_stats": total_stats,

@@ -97,9 +97,9 @@ def setup_parser() -> argparse.ArgumentParser:
         "--batch_size",
         "-b",
         type=str,
-        default=1,
+        default='auto',
         metavar="auto|auto:N|N",
-        help="Acceptable values are 'auto', 'auto:N' or N, where N is an integer. Default 1.",
+        help="Acceptable values are 'auto', 'auto:N' or N, where N is an integer. Defaults to 'auto'.",
     )
     parser.add_argument(
         "--max_batch_size",
@@ -273,6 +273,12 @@ def setup_parser() -> argparse.ArgumentParser:
         help="Value to use for sparsification rule. Should be 0-1.",
     )
     parser.add_argument(
+        "--sparsification_topp_power",
+        default=1.0,
+        type=float,
+        help="Power to use for topp sparsification. Should be >= 1.0.",
+    )
+    parser.add_argument(
         "--sparsification_rule",
         default=None,
         choices=[None, "topp", "topk", "maxp"],
@@ -433,7 +439,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
 
     if args.sparsification_config is not None:
         if args.moe:
-            assert str.isnumeric(args.batch_size) and int(args.batch_size) == 1, "MoE sparsity manager can only use batch size 1."
+            assert int(args.batch_size) == 1, "MoE sparsity manager can only use batch size 1."
             sparsification_manager = MoESparsificationManager(
                 args.sparsification_config,
                 output_dir=args.output_path,
@@ -448,6 +454,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
                 output_dir=args.output_path,
                 sparsification_rule=args.sparsification_rule,
                 th_val=args.sparsification_th_val,
+                topp_power=args.sparsification_topp_power,
                 compute_effective_rank=args.compute_effective_rank,
                 save_outputs=args.log_inputs_and_outputs,
             )
