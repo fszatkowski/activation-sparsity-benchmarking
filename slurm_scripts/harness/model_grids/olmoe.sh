@@ -55,23 +55,22 @@ for task in arc_easy arc_challenge boolq winogrande piqa sciq lambada hellaswag 
         for sparsity_setup in "${sparsity_setups[@]}"; do
             read -r sparsification_rule sparsification_th <<< "$sparsity_setup"
             run_name="${sparsification_rule}_${sparsification_th}"
-                eval_job_name="eval/${model_eval_dir}/${task}/${run_name}"
-                sbatch \
-                    -A $SLURM_ACC \
-                    -p $SLURM_PARTITION \
-                    --job-name=${eval_job_name} \
-                    --gres=gpu:${num_gpus} \
-                    --job-name=${eval_job_name} \
-                    slurm_scripts/harness/sparse_eval_moe.sh \
-                    ${model_path} \
-                    ${task} \
-                    ${eval_dir} \
-                    ${run_name} \
-                    ${sparsification_config} \
-                    ${sparsification_rule} \
-                    ${sparsification_th} \
-                    ${max_gen_toks} \
-                    ${num_gpus}
+            eval_job_name="eval/${model_eval_dir}/${task}/${run_name}"
+            sbatch \
+                -A $SLURM_ACC \
+                -p $SLURM_PARTITION \
+                --job-name=${eval_job_name} \
+                --gres=gpu:${num_gpus} \
+                slurm_scripts/harness/sparse_eval_moe.sh \
+                ${model_path} \
+                ${task} \
+                ${eval_dir} \
+                ${run_name} \
+                ${sparsification_config} \
+                ${sparsification_rule} \
+                ${sparsification_th} \
+                ${max_gen_toks} \
+                ${num_gpus}
         done
     done
 done

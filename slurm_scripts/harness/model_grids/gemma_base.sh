@@ -25,7 +25,7 @@ model_setups=(
     "google/gemma-3-12b-pt gemma3-12b/input lm_eval/sparsification_configs/gemma3-12b_input.json 1"
     "google/gemma-3-12b-pt gemma3-12b/gate lm_eval/sparsification_configs/gemma3-12b_gate.json 1"
     "google/gemma-3-12b-pt gemma3-12b/up_proj lm_eval/sparsification_configs/gemma3-12b_up_proj.json 1"
-    "google/gemma-3-12b-pt gemma3-12b/all_inputs lm_eval/sparsification_configs/gemma3-12b_all_inputs.json"
+    "google/gemma-3-12b-pt gemma3-12b/all_inputs lm_eval/sparsification_configs/gemma3-12b_all_inputs.json 1"
     "google/gemma-3-27b-pt gemma3-27b/intermediate lm_eval/sparsification_configs/gemma3-27b_intermediate.json 2"
     "google/gemma-3-27b-pt gemma3-27b/input lm_eval/sparsification_configs/gemma3-27b_input.json 2"
     "google/gemma-3-27b-pt gemma3-27b/gate lm_eval/sparsification_configs/gemma3-27b_gate.json 2"

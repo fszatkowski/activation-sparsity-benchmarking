@@ -87,7 +87,6 @@ for params in "${model_setups[@]}"; do
                 -p $SLURM_PARTITION \
                 --job-name=${eval_job_name} \
                 --gres=gpu:${num_gpus} \
-                --job-name=${eval_job_name} \
                 slurm_scripts/harness/sparse_eval.sh \
                 ${model_path} \
                 ${task} \
