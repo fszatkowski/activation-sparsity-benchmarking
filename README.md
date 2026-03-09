@@ -96,27 +96,10 @@ The `sparsified_llada` directories:
 - 
 ### 📦 Installation
 
-In progress
-[//]: # ()
-[//]: # (```bash)
-
-[//]: # (cd sparsified_harness)
-
-[//]: # (pip install -e .)
-
-[//]: # (```)
-
-[//]: # ()
-[//]: # (You will also need to set the following environment variables:)
-
-[//]: # ()
-[//]: # (| Variable | Description |)
-
-[//]: # (|----------|-------------|)
-
-[//]: # (| `HF_TOKEN` | Your Hugging Face access token |)
-
-[//]: # (| `HF_HOME` | Directory for caching models and datasets |)
+```bash
+cd sparsified_llada
+pip install -e .
+```
 
 ### 🧪 Reproducing Paper Experiments (SLURM)
 

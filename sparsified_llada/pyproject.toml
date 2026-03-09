@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=40.8.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sparsified_llada"
+version = "0.1.0"
+authors = [
+    {name="Patryk Będkowski", email="bedkowski.patrick@gmail.com"}
+]
+description = "LLaDA evaluation and activation sparsity benchmarking scripts"
+readme = "README.md"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.9"
+license = { "text" = "MIT" }
+
+# Combined dependencies from your LLaDA scripts and analysis tools
+dependencies = [
+    "accelerate>=0.26.0",
+    "datasets>=4.0.0",
+    "torch>=2.0.0",
+    "transformers>=4.1",
+    "lm-eval",
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "seaborn",
+    "tqdm"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+# Ensures the scripts directory is installed as a module
+include = ["scripts*"]
+
+# Required to include yaml/json configs if you add them to the pip installation later
+[tool.setuptools.package-data]
+scripts = ["**/*.yaml", "**/*.json"]
+
+[project.urls]
+Homepage = "https://github.com/ML-GSAI/LLaDA"
+Repository = "https://github.com/ML-GSAI/LLaDA"
+
+# Optional dependencies for development
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "pytest-xdist", "pre-commit", "mypy", "ruff"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["scripts"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"__init__.py" = ["F401","F402","F403"]
