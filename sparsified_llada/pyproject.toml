@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=40.8.0", "wheel"]
+requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,53 +10,42 @@ authors = [
 ]
 description = "LLaDA evaluation and activation sparsity benchmarking scripts"
 readme = "README.md"
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
-requires-python = ">=3.9"
-license = { "text" = "MIT" }
+requires-python = ">=3.10"
+# Use a simple string for license to avoid setuptools deprecation errors
+license = { text = "MIT" }
 
-# Combined dependencies from your LLaDA scripts and analysis tools
+# Unified dependencies for LLaDA 8B and your evaluation scripts
 dependencies = [
-    "accelerate>=0.26.0",
-    "datasets>=4.0.0",
-    "torch>=2.0.0",
-    "transformers>=4.1",
-    "lm-eval",
+    "transformers>=4.49.0",
+    "accelerate>=0.34.2",
+    "datasets>=4.5.0",
+    "torch>=2.8.0",
+    # Point directly to your local custom harness to prevent PyPI collisions
+    "lm-eval @ file:///net/tscratch/people/plgpbedkowski/activation_sparsity_repo_test/activation-sparsity-benchmarking/sparsified_harness",
+    "antlr4-python3-runtime==4.11",
     "numpy",
     "pandas",
     "scipy",
     "matplotlib",
     "seaborn",
-    "tqdm"
+    "tqdm",
+    "evaluate"
+]
+
+# Removed the MIT License from classifiers because it's already in the license field
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-# Ensures the scripts directory is installed as a module
 include = ["scripts*"]
 
-# Required to include yaml/json configs if you add them to the pip installation later
 [tool.setuptools.package-data]
-scripts = ["**/*.yaml", "**/*.json"]
+lm_eval = ["tasks/**/*.yaml", "tasks/**/*.yml"]
 
 [project.urls]
 Homepage = "https://github.com/ML-GSAI/LLaDA"
 Repository = "https://github.com/ML-GSAI/LLaDA"
-
-# Optional dependencies for development
-[project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-xdist", "pre-commit", "mypy", "ruff"]
-
-[tool.ruff.lint]
-extend-select = ["I"]
-
-[tool.ruff.lint.isort]
-lines-after-imports = 2
-known-first-party = ["scripts"]
-
-[tool.ruff.lint.extend-per-file-ignores]
-"__init__.py" = ["F401","F402","F403"]

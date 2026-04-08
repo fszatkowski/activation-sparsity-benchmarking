@@ -7,7 +7,17 @@ The evaluation process is automated via SLURM bash scripts. These scripts manage
 
 
 ### 1. Environment Setup
-Before running the scripts, ensure your Python environment is prepared as discussed in the setup instructions (using the pyproject.toml or pip install -e .).
+Before running the scripts, ensure your Python environment is prepared as discussed in the setup instructions:
+
+```bash
+cd sparsified_llada
+
+python3 -m venv venv_llada
+
+source venv_llada/bin/activate
+
+pip install -e .
+```
 
 ### 2. Configuration & Submission
 
@@ -15,6 +25,11 @@ There are two primary submission scripts depending on which layers you wish to s
 
 * `llada_input_intermediate.sh`: Applies sparsity hooks to both input (gate/up projection) and intermediate (down projection) layers.
 * `llada_intermediate.sh`: Applies sparsity hooks only to the intermediate (down projection) layers.
+
+in both of them modify
+
+* line `source <path to python interpreter>` in line `88`.
+* add variable `HARNESS_DIR` and `LLADA_DIR`.
 
 #### How to run:
 

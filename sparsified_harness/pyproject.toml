@@ -16,8 +16,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-requires-python = ">=3.9"
-license = { "text" = "MIT" }
+requires-python = ">=3.10"
+license = "MIT"
 dependencies = [
     "accelerate>=0.26.0",
     "evaluate",
@@ -38,7 +38,7 @@ dependencies = [
     "zstandard",
     "dill",
     "word2number",
-    "more_itertools",
+    "more-itertools",
 ]
 
 [tool.setuptools.packages.find]
