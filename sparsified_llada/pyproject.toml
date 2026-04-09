@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sparsified_llada"
+version = "0.1.0"
+authors = [
+    {name="Patryk Będkowski", email="bedkowski.patrick@gmail.com"}
+]
+description = "LLaDA evaluation and activation sparsity benchmarking scripts"
+readme = "README.md"
+requires-python = ">=3.10"
+# Use a simple string for license to avoid setuptools deprecation errors
+license = { text = "MIT" }
+
+# Unified dependencies for LLaDA 8B and your evaluation scripts
+dependencies = [
+    "transformers>=4.49.0",
+    "accelerate>=0.34.2",
+    "datasets>=4.5.0",
+    "torch>=2.8.0",
+    # Point directly to your local custom harness to prevent PyPI collisions
+    "lm-eval @ file:///net/tscratch/people/plgpbedkowski/activation_sparsity_repo_test/activation-sparsity-benchmarking/sparsified_harness",
+    "antlr4-python3-runtime==4.11",
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "seaborn",
+    "tqdm",
+    "evaluate"
+]
+
+# Removed the MIT License from classifiers because it's already in the license field
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]
+
+[tool.setuptools.package-data]
+lm_eval = ["tasks/**/*.yaml", "tasks/**/*.yml"]
+
+[project.urls]
+Homepage = "https://github.com/ML-GSAI/LLaDA"
+Repository = "https://github.com/ML-GSAI/LLaDA"
